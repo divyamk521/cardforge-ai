@@ -1,0 +1,1519 @@
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.units import mm, cm
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    PageBreak, HRFlowable, KeepTogether
+)
+from reportlab.platypus.flowables import Flowable
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import os
+
+W, H = A4
+
+# ── colours ────────────────────────────────────────────────────────────────
+BLACK   = colors.HexColor("#0A0A0A")
+WHITE   = colors.white
+ACCENT  = colors.HexColor("#1A1A2E")      # deep navy
+PHASE_COLORS = {
+    1: colors.HexColor("#1A1A2E"),  # deep navy
+    2: colors.HexColor("#16213E"),  # dark blue
+    3: colors.HexColor("#0F3460"),  # medium blue
+    4: colors.HexColor("#533483"),  # purple
+    5: colors.HexColor("#2C2C54"),  # dark indigo
+}
+PHASE_LIGHT = {
+    1: colors.HexColor("#E8EAF6"),
+    2: colors.HexColor("#E3F2FD"),
+    3: colors.HexColor("#E1F5FE"),
+    4: colors.HexColor("#EDE7F6"),
+    5: colors.HexColor("#E8EAF6"),
+}
+TAG_BG   = colors.HexColor("#F0F4FF")
+TAG_BORDER = colors.HexColor("#C5CAE9")
+DIVIDER  = colors.HexColor("#E0E0E0")
+LIGHT_BG = colors.HexColor("#FAFAFA")
+MID_GRAY = colors.HexColor("#666666")
+DARK_GRAY= colors.HexColor("#333333")
+
+# ── styles ──────────────────────────────────────────────────────────────────
+ss = getSampleStyleSheet()
+
+def S(name, **kw):
+    base = ss.get(name, ss['Normal'])
+    return ParagraphStyle(name + str(id(kw)), parent=base, **kw)
+
+cover_title = S('Title',
+    fontSize=38, leading=46, textColor=WHITE,
+    fontName='Helvetica-Bold', spaceAfter=6, alignment=TA_LEFT)
+
+cover_sub = S('Normal',
+    fontSize=14, leading=20, textColor=colors.HexColor("#CCCCFF"),
+    fontName='Helvetica', alignment=TA_LEFT)
+
+cover_meta = S('Normal',
+    fontSize=11, leading=16, textColor=colors.HexColor("#AAAACC"),
+    fontName='Helvetica', alignment=TA_LEFT)
+
+section_header = S('Normal',
+    fontSize=20, leading=26, textColor=WHITE,
+    fontName='Helvetica-Bold', alignment=TA_LEFT,
+    spaceAfter=4, spaceBefore=4)
+
+day_num_style = S('Normal',
+    fontSize=11, leading=14, textColor=MID_GRAY,
+    fontName='Helvetica-Bold')
+
+project_title = S('Normal',
+    fontSize=17, leading=22, textColor=BLACK,
+    fontName='Helvetica-Bold', spaceBefore=4, spaceAfter=6)
+
+label_style = S('Normal',
+    fontSize=9, leading=12, textColor=WHITE,
+    fontName='Helvetica-Bold')
+
+body_style = S('Normal',
+    fontSize=10, leading=15, textColor=DARK_GRAY,
+    fontName='Helvetica', spaceAfter=4, alignment=TA_JUSTIFY)
+
+section_label = S('Normal',
+    fontSize=9, leading=12, textColor=MID_GRAY,
+    fontName='Helvetica-Bold', spaceBefore=8, spaceAfter=3)
+
+step_style = S('Normal',
+    fontSize=10, leading=15, textColor=DARK_GRAY,
+    fontName='Helvetica', spaceAfter=3, leftIndent=12)
+
+achievement_style = S('Normal',
+    fontSize=10, leading=15, textColor=colors.HexColor("#1A237E"),
+    fontName='Helvetica', spaceAfter=3, leftIndent=12)
+
+progression_style = S('Normal',
+    fontSize=10, leading=15, textColor=colors.HexColor("#1B5E20"),
+    fontName='Helvetica', spaceAfter=3, leftIndent=12, alignment=TA_JUSTIFY)
+
+toc_header = S('Normal',
+    fontSize=14, leading=18, textColor=WHITE,
+    fontName='Helvetica-Bold')
+
+toc_entry = S('Normal',
+    fontSize=10, leading=14, textColor=DARK_GRAY,
+    fontName='Helvetica')
+
+toc_phase = S('Normal',
+    fontSize=11, leading=16, textColor=BLACK,
+    fontName='Helvetica-Bold', spaceBefore=8, spaceAfter=2)
+
+
+# ── data ────────────────────────────────────────────────────────────────────
+projects = [
+  # PHASE 1
+  {
+    "day": 1, "phase": 1,
+    "title": "AI-Powered Git Commit Message Generator",
+    "problem": "Every developer writes dozens of git commits daily. Most commit messages are vague, inconsistent, or meaningless — 'fix bug', 'update file', 'changes'. This makes code history unreadable and code reviews harder. Teams waste time deciphering what changed and why. There is no standardized, automated way to generate Conventional Commits-compliant messages from actual code diffs.",
+    "solution": "Build a CLI tool that reads the staged git diff using GitPython, sends the diff to an LLM via Groq API, and returns a perfectly formatted commit message following the Conventional Commits specification. The tool runs as a shell command (aicommit), shows a preview, and lets the user accept, edit, or regenerate.",
+    "stack": ["Python 3.11", "Groq API (llama3-8b-8192)", "GitPython", "Click CLI framework", "Rich (terminal formatting)", "python-dotenv"],
+    "steps": [
+      "Set up a Python project with a pyproject.toml, install Click, GitPython, Groq SDK, and Rich.",
+      "Use GitPython to detect the current git repo, get staged diff via repo.index.diff('HEAD') and repo.git.diff('--staged').",
+      "Craft a system prompt that instructs the LLM to output Conventional Commits format: type(scope): description. Include examples in the prompt (few-shot).",
+      "Call Groq API with the diff as user content. Handle diff truncation for large diffs — summarize files changed first, then show top 200 lines of actual diff.",
+      "Parse the LLM response, display it using Rich with syntax highlighting in the terminal.",
+      "Add an interactive prompt: Accept (y), Edit (e), Regenerate (r), Cancel (n). If 'e', open in $EDITOR.",
+      "On acceptance, run repo.index.commit(message) to apply the commit programmatically.",
+      "Add a --dry-run flag, --type flag to force a commit type, and --context flag to add extra context.",
+      "Package it as a pip-installable tool with entry_points so it installs globally as the 'aicommit' command.",
+      "Write a README with a demo GIF showing the workflow. Push to GitHub."
+    ],
+    "achieved": "Built and shipped a real CLI tool that solves a genuine developer pain point. Learned how to structure prompt engineering for structured output, handle git programmatically with GitPython, build interactive CLI apps with Click and Rich, and package Python projects for distribution.",
+    "progression": "This is Day 1 — your foundation. You learn the core loop: take real-world input → send to LLM → parse structured output → take action. Every subsequent project builds on this exact loop but adds more complexity, state, and architecture."
+  },
+  {
+    "day": 2, "phase": 1,
+    "title": "Resume vs Job Description Matcher with Gap Analysis",
+    "problem": "Job seekers apply to dozens of jobs but rarely tailor their resumes, leading to low callback rates. ATS (Applicant Tracking Systems) reject resumes that don't match keywords. Manually comparing a resume to a JD takes 20-30 minutes and is inconsistent. There is no free, intelligent tool that tells you exactly what is missing and how to rewrite specific sections.",
+    "solution": "Build a Streamlit app where users upload a PDF resume and paste a JD. The system extracts text from the PDF, uses LangChain to analyze both documents, scores the match on 5 dimensions (skills, experience, keywords, tone, impact statements), lists missing keywords, and generates a rewritten resume tailored to that JD.",
+    "stack": ["Python", "LangChain", "Groq API", "PyMuPDF (fitz)", "Streamlit", "Pydantic (structured output)", "python-docx (optional output)"],
+    "steps": [
+      "Set up Streamlit app layout with two columns: left for resume upload, right for JD paste area.",
+      "Use PyMuPDF (fitz) to extract text from uploaded PDF resume. Handle multi-column layouts by sorting text blocks by position.",
+      "Build a LangChain chain with a structured output parser using Pydantic. Define a ResumeAnalysis model with fields: match_score (int), skill_gaps (list), keyword_gaps (list), strength_points (list), rewrite_suggestions (dict).",
+      "Write a detailed system prompt that acts as a senior recruiter. Ask it to score each of the 5 dimensions and provide specific, actionable feedback per section.",
+      "Display results with a visual match score gauge (use Streamlit progress bars), color-coded gap lists (red = missing, green = matched), and expandable sections for each dimension.",
+      "Add a 'Rewrite Section' feature: user selects which resume section to rewrite (Summary, Experience, Skills). Pass the original section + JD + gaps to get an improved version.",
+      "Add a keyword cloud visualization showing which JD keywords are and aren't in the resume.",
+      "Allow downloading the analysis as a structured report.",
+      "Add caching with st.cache_data so re-analysis of same resume/JD is instant.",
+      "Deploy to Streamlit Cloud with a shareable URL."
+    ],
+    "achieved": "Learned PDF text extraction with PyMuPDF, structured LLM output with Pydantic models, building multi-step LangChain chains, and creating a polished Streamlit UI. This is your first deployable web app — it has a real URL you can share.",
+    "progression": "Day 1 was CLI-only with raw API calls. Day 2 adds: a web UI (Streamlit), structured output parsing with Pydantic, multi-document analysis, and your first deployed app. You now understand how to present AI output in a user-friendly way."
+  },
+  {
+    "day": 3, "phase": 1,
+    "title": "Fully Offline Local File Q&A System with Ollama",
+    "problem": "People store important knowledge in files — PDFs, markdown notes, code files, research papers — but can't query across them intelligently. Cloud-based solutions send your private data to external servers. There is no simple, fully offline tool that lets you ask questions across your personal document collection with accurate, cited answers.",
+    "solution": "Build a fully local RAG system using Ollama for both embeddings and generation. The user points the app at a folder, it indexes all supported file types, and they can ask questions in natural language. Every answer cites the exact source file and page number.",
+    "stack": ["Python", "Ollama (llama3, nomic-embed-text)", "LlamaIndex", "ChromaDB (local)", "Gradio", "Watchdog (file change detection)", "pathlib"],
+    "steps": [
+      "Install Ollama and pull llama3 and nomic-embed-text models locally. Verify both work via CLI.",
+      "Set up LlamaIndex with OllamaLLM and OllamaEmbedding. Configure ChromaDB as the local vector store with a persistent storage path.",
+      "Build a document loader that handles multiple file types: PDF (PyMuPDF), Markdown, TXT, Python/code files, DOCX. Use file extension to route to the right loader.",
+      "Implement chunking strategy: 512 token chunks with 50 token overlap. Metadata per chunk: filename, file_path, page_number, chunk_index.",
+      "Build the indexing pipeline: scan folder → load files → chunk → embed → store in ChromaDB. Show a progress bar during indexing.",
+      "Implement the query pipeline with source citation: top-k=5 retrieval, include source metadata in each result, pass to LLM with a strict 'only use provided context' prompt.",
+      "Format citations clearly: [Source: filename.pdf, Page 3].",
+      "Build Gradio interface with: folder path input, index button with progress, chat interface, source citation display below each answer.",
+      "Add file watcher using Watchdog: when files change in the folder, auto-reindex changed files without full reindex.",
+      "Add a 'What documents do I have?' command that lists all indexed files and their chunk counts."
+    ],
+    "achieved": "Mastered local LLM inference with Ollama, built your first complete RAG pipeline end-to-end, learned vector databases (ChromaDB) and embedding models. Most importantly: you now understand WHY RAG works — retrieval augments generation with factual grounding.",
+    "progression": "Days 1-2 called cloud APIs. Day 3 is fully offline — you understand the full local AI stack. You also go from single-document to multi-document retrieval. This is your first real RAG system, which is a core skill for AI engineering."
+  },
+  {
+    "day": 4, "phase": 1,
+    "title": "Async Team Standup Bot with AI Digest",
+    "problem": "Remote and distributed teams struggle with daily standups. Synchronous calls pull people out of flow state. Written standups in Slack get buried and nobody reads them. There is no tool that collects async standups, deduplicates blockers, groups related items, and generates a clean daily digest that a manager can scan in 30 seconds.",
+    "solution": "Build a FastAPI backend with a web form for team members to submit standups. A scheduler runs daily at 9 AM to collect all submissions, feed them to an LLM, and generate a structured digest email/Slack message. The digest groups work by theme, surfaces blockers, and highlights cross-team dependencies.",
+    "stack": ["Python", "FastAPI", "SQLite (aiosqlite)", "APScheduler", "Groq API", "Jinja2 (email templates)", "smtplib / Resend API", "uvicorn"],
+    "steps": [
+      "Set up FastAPI project structure with routers, models, and database module. Initialize SQLite database with tables: teams, members, standups (date, member_id, yesterday, today, blockers).",
+      "Build the standup submission endpoint: POST /standup with validation. Store with timestamp and member info.",
+      "Create a Jinja2 HTML form for standup submission. Include fields: What did you do yesterday? What will you do today? Any blockers? Team selection dropdown.",
+      "Build the digest generation function: query all standups for today's date, group by team, pass to LLM with a prompt that asks for: theme grouping, blocker summary, cross-team callouts, and a 3-line executive summary at the top.",
+      "Set up APScheduler with a CronTrigger for 5 PM daily to generate and send digest.",
+      "Format the digest as both HTML email (Jinja2 template with tables) and plain text.",
+      "Add a /digest/{date} endpoint to view any past digest as a webpage.",
+      "Add a /admin dashboard showing submission rates per team member (who hasn't submitted).",
+      "Add Slack webhook integration: send the digest as a Slack message with formatted blocks.",
+      "Add a 'standup streak' tracker — members get a streak counter for consecutive daily submissions."
+    ],
+    "achieved": "Built your first backend API with FastAPI, learned async database operations, job scheduling with APScheduler, and email templating. This is your first multi-component system with a database, scheduler, and external integrations.",
+    "progression": "Days 1-3 were single-user tools. Day 4 is your first multi-user, backend system with persistent storage and scheduled jobs. You now understand server architecture, not just AI API calls."
+  },
+  {
+    "day": 5, "phase": 1,
+    "title": "Chrome Extension: AI Text Explainer at Any Reading Level",
+    "problem": "People constantly encounter text they don't fully understand — legal documents, academic papers, medical reports, news articles. Copying text and pasting it into ChatGPT is a 5-step friction-heavy process. There is no lightweight, in-browser tool that explains selected text instantly at a user-chosen reading level.",
+    "solution": "Build a Chrome extension where selecting any text on any webpage triggers an icon. Clicking it opens a popup showing the selected text explained at the user's chosen reading level (5th grade, high school, college, expert). Users can also ask follow-up questions about the selected text.",
+    "stack": ["JavaScript (Vanilla)", "Chrome Extension Manifest V3", "Chrome Storage API", "Groq API (direct fetch from background)", "HTML/CSS", "marked.js (markdown rendering)"],
+    "steps": [
+      "Set up Chrome Extension structure: manifest.json (Manifest V3), background service worker, content script, popup, options page.",
+      "In manifest.json: declare permissions (activeTab, storage, contextMenus, scripting), set content_scripts for the content.js, add action popup.",
+      "Build content.js: listen for mouseup events, detect if text is selected (window.getSelection()), inject a floating icon near the selection.",
+      "When icon is clicked, capture the selected text and send it to the background service worker via chrome.runtime.sendMessage.",
+      "Background service worker: receive the message, fetch Groq API with the text and reading level from chrome.storage.sync.",
+      "Build the popup UI: display the explanation with markdown rendering (marked.js), show a reading level selector (radio buttons), add a text input for follow-up questions.",
+      "Implement conversation history: store the selected text + explanation as context, allow 3 follow-up questions.",
+      "Add an options page (options.html) where users set their Groq API key and default reading level. Store in chrome.storage.sync.",
+      "Add right-click context menu option: 'Explain with AI' appears when text is selected.",
+      "Package the extension, write a thorough README with installation instructions. Load as unpacked extension for demo."
+    ],
+    "achieved": "Learned Chrome Extension architecture (Manifest V3), background service workers, content scripts, cross-context messaging, and the Chrome Storage API. You built something that lives inside the browser itself — a completely different deployment model.",
+    "progression": "Days 1-4 were server-side or CLI tools. Day 5 is your first client-side browser extension — a completely different architecture. You now understand how to ship software that runs in the browser without any backend infrastructure."
+  },
+  {
+    "day": 6, "phase": 1,
+    "title": "PDF Contract Risk Highlighter and Plain English Translator",
+    "problem": "Most people sign contracts they don't fully understand. Legal language is deliberately complex — buried indemnity clauses, automatic renewal traps, unlimited liability terms. Lawyers charge $300-500/hour to review contracts. Small businesses and individuals sign agreements blindly and often suffer consequences months later.",
+    "solution": "Build an app where users upload any contract PDF. The system identifies and categorizes risky clauses (indemnity, liability, termination, IP ownership, non-compete), explains each in plain English, assigns a risk score (1-10), highlights the problematic text, and generates an executive summary with red flags at the top.",
+    "stack": ["Python", "LangChain", "PyMuPDF", "Groq API", "Streamlit", "RAG with semantic chunking", "Pydantic", "json"],
+    "steps": [
+      "Extract full text from PDF with PyMuPDF, preserving page numbers. Split into semantic chunks at paragraph boundaries (not fixed token windows) using a newline-based splitter.",
+      "Build a RiskClause Pydantic model: clause_text, risk_category, risk_score (1-10), plain_english_explanation, specific_concern, recommended_action.",
+      "First LLM call: send the full contract summary (first pass) to identify which sections contain risky clauses. Get back a list of section titles/page ranges to focus on.",
+      "Second LLM call: for each identified section, extract and analyze risky clauses using structured output. Use Groq's JSON mode for reliable Pydantic output.",
+      "Calculate an overall contract risk score as a weighted average. Weight by clause category severity: IP/non-compete = high, payment terms = medium.",
+      "Build a Streamlit UI with three columns: original contract text (left), risk highlights overlay (middle), analysis panel (right).",
+      "Color-code by risk level: red (8-10), orange (5-7), yellow (3-4), green (1-2). Show each risky clause with its score badge.",
+      "Generate an executive summary section at the top: 'Top 3 Red Flags', 'Before You Sign' checklist, 'Questions to Ask Your Lawyer'.",
+      "Add a comparison mode: upload two contracts (e.g., two vendor proposals) and compare risk profiles side by side.",
+      "Add PDF export of the analysis report."
+    ],
+    "achieved": "Learned multi-pass LLM analysis (first scan then deep dive), structured JSON output with Pydantic, risk scoring logic, and complex Streamlit UI design. This is your first domain-specific AI application (legal-tech).",
+    "progression": "Day 6 introduces multi-pass prompting — a critical technique where you use one LLM call to identify what to analyze, then a second deeper call for the actual analysis. This pattern appears in 80% of production AI systems."
+  },
+  {
+    "day": 7, "phase": 1,
+    "title": "YouTube Video Summarizer with AI Chapter Timestamps",
+    "problem": "Long YouTube videos (1-3 hours) are extremely hard to navigate. Viewers skip around blindly looking for relevant content. Video creators spend hours manually writing chapter timestamps. Viewers waste time watching introductions and filler content to find the 10 minutes they actually need.",
+    "solution": "Build a web app where users paste a YouTube URL. The system downloads the audio, transcribes it with Whisper, segments the transcript by topic using LLM analysis, generates chapter titles for each segment, and outputs formatted timestamps ready to paste into YouTube description.",
+    "stack": ["Python", "yt-dlp", "OpenAI Whisper (local)", "LangChain", "Groq API", "FastAPI", "React (simple frontend)", "ffmpeg"],
+    "steps": [
+      "Set up FastAPI backend. Use yt-dlp to download audio-only stream from YouTube URL. Extract as MP3 at 128kbps to minimize file size.",
+      "Run Whisper (base or medium model) on the audio file. Get the full transcript with word-level timestamps.",
+      "Post-process Whisper output: group words into sentences, add sentence-level timestamps, create 'transcript segments' of roughly 200 words each.",
+      "First LLM pass: send the full transcript to identify major topic transitions. Get back approximate timestamps where the topic changes.",
+      "Second LLM pass: for each segment between topic transitions, generate a descriptive chapter title (5-8 words), a 2-sentence summary, and 3 key points.",
+      "Format the output as YouTube chapter timestamps: '00:00 Introduction', '02:34 Key Concept X', etc.",
+      "Build a React frontend with: URL input field, processing progress bar (yt-dlp → transcription → analysis), display of full transcript with chapter markers, copy-to-clipboard buttons for chapters.",
+      "Add a 'skip to' feature: users can click any chapter to see its exact transcript text.",
+      "Add keyword extraction: pull top 10 keywords/phrases from the video for SEO.",
+      "Cache processed videos by URL so re-requests are instant."
+    ],
+    "achieved": "Learned audio downloading with yt-dlp, local speech-to-text with Whisper, multi-pass LLM analysis, and building a React frontend that communicates with a FastAPI backend. First time working with audio/media processing.",
+    "progression": "Days 1-6 worked with text and PDFs. Day 7 introduces audio/video processing — a completely new input modality. You now understand the full pipeline: media → transcription → LLM analysis → structured output."
+  },
+  {
+    "day": 8, "phase": 1,
+    "title": "Natural Language to SQL Generator with Schema Awareness",
+    "problem": "Non-technical stakeholders (analysts, product managers, executives) cannot query databases directly. Writing SQL requires expertise most business users don't have. Custom BI dashboards are expensive to build and never cover all the ad-hoc questions users have. Data teams are constantly interrupted with 'can you pull this data for me?' requests.",
+    "solution": "Build a tool where users upload a database schema (SQL file or connect to a live database) and describe what data they want in plain English. The system generates production-grade SQL, explains what it does, warns about performance issues, and executes it showing results in a table.",
+    "stack": ["Python", "LangChain", "Groq API", "SQLAlchemy", "SQLite / PostgreSQL", "Streamlit", "Pandas", "Few-shot prompting"],
+    "steps": [
+      "Build a schema parser that reads CREATE TABLE statements and extracts: table names, column names and types, foreign key relationships, indexes.",
+      "Represent the schema as a structured context string that will be injected into every prompt: 'Tables: [table1 (col1: type, col2: type), ...]'.",
+      "Implement few-shot examples: include 5 example natural language → SQL pairs in the system prompt, covering JOINs, aggregations, filters, and subqueries.",
+      "Build the LangChain chain: schema context + few-shot examples + user question → generated SQL + explanation + performance warning.",
+      "Add a SQL validator step: parse the generated SQL with sqlparse, check for common issues (missing WHERE on UPDATE/DELETE, cartesian products, no LIMIT on large tables).",
+      "Execute the validated SQL using SQLAlchemy against the connected database. Display results as a Pandas DataFrame rendered in Streamlit.",
+      "Add query explanation: a second LLM call that explains what the SQL does in plain English, step by step.",
+      "Add performance hints: detect if query lacks an index, suggest adding one.",
+      "Build a query history sidebar showing past queries, their results row counts, and execution time.",
+      "Add export to CSV button on all result tables."
+    ],
+    "achieved": "Learned database schema parsing, SQLAlchemy for database connections, few-shot prompting techniques, SQL validation, and query execution with result display. This is your first data engineering adjacent project.",
+    "progression": "Day 8 introduces structured data reasoning — the LLM must understand your specific database schema, not just general SQL. You learn how to inject structured context (schema) into prompts, a technique critical for enterprise AI applications."
+  },
+  {
+    "day": 9, "phase": 1,
+    "title": "Meeting Transcript Action Item Extractor",
+    "problem": "Most meetings end without clear records of what was decided and who is responsible for what. People leave meetings with different understandings of action items. Follow-up emails summarizing meetings are written manually and often miss items. Project managers spend 30-60 minutes post-meeting creating structured notes.",
+    "solution": "Build an API that accepts raw meeting transcript text and returns a fully structured meeting output: decisions made, action items with owners and deadlines, questions raised but not answered, key numbers/metrics mentioned, and a 3-sentence executive summary. Frontend allows copy-to-clipboard and Notion/Slack export.",
+    "stack": ["Python", "Groq API", "Pydantic (v2)", "FastAPI", "React", "TypeScript", "Tailwind CSS", "structured output / JSON mode"],
+    "steps": [
+      "Define Pydantic v2 models for the output schema: MeetingOutput containing List[ActionItem], List[Decision], List[UnansweredQuestion], List[KeyMetric], ExecutiveSummary, MeetingMetadata.",
+      "ActionItem model: task_description, assigned_to (str), deadline (str), priority (high/medium/low), context (why this was decided).",
+      "Build the LangChain structured output chain using with_structured_output(MeetingOutput). This forces the LLM to return valid JSON matching the schema.",
+      "Write a detailed system prompt that instructs the LLM to be a meticulous note-taker. Include instructions for handling ambiguity: 'If no owner is mentioned, use Unassigned. If no deadline, use TBD.'",
+      "Build a FastAPI endpoint: POST /analyze with body {transcript: str, meeting_title: str, date: str}. Return the MeetingOutput JSON.",
+      "Build a React TypeScript frontend with Tailwind CSS. Three-panel layout: paste transcript (left), structured output (right), export options (bottom).",
+      "Add color coding: action items by priority (red/yellow/green), overdue items highlighted.",
+      "Implement Slack export: format as a Slack message with blocks and post via Slack API.",
+      "Add a summary email generator: create a formatted follow-up email with all action items, ready to send.",
+      "Add meeting analytics: word count, talk time estimates per person (count name mentions), number of decisions per meeting."
+    ],
+    "achieved": "Mastered Pydantic v2 structured output with LangChain's with_structured_output(), built your first TypeScript React frontend, and learned Tailwind CSS. This is a polished full-stack app.",
+    "progression": "Day 9 introduces TypeScript and a proper React/Tailwind frontend — the industry standard for AI product frontends. You also master structured output, which is one of the most important practical skills in AI engineering."
+  },
+  {
+    "day": 10, "phase": 1,
+    "title": "AI Code Reviewer for GitHub Pull Requests",
+    "problem": "Code reviews are time-consuming and inconsistent. Senior engineers spend 2-3 hours daily reviewing PRs. Junior engineers miss security vulnerabilities, performance issues, and style problems. Many bugs reach production because human reviewers are fatigued. There is no automated reviewer that gives thoughtful, contextual inline comments like a senior engineer.",
+    "solution": "Build a GitHub Action that triggers on every PR. It analyzes the diff, posts inline review comments on specific lines, adds a summary review comment, and can optionally approve or request changes. The reviewer checks for bugs, security issues, performance problems, and code style.",
+    "stack": ["Python", "GitHub Actions (YAML)", "PyGitHub (PyGithub)", "Groq API", "git diff parsing", "YAML", "GitHub REST API"],
+    "steps": [
+      "Set up GitHub Actions workflow YAML: trigger on pull_request events (opened, synchronize). Checkout code, set up Python, install dependencies.",
+      "Use PyGitHub to authenticate with GITHUB_TOKEN, fetch the PR object, get the list of changed files and the full diff.",
+      "Parse the diff: extract per-file changes with line numbers. For each file, create a structured change object: filename, language, added_lines (with line numbers), removed_lines.",
+      "For each changed file (up to 10 files per review to manage cost), send the file diff to Groq with a prompt asking for: inline comments (line number + comment), severity (info/warning/error), category (security/performance/bug/style).",
+      "Use PyGitHub to post review comments: pr.create_review() with comments=[{path, line, body}] for each inline comment.",
+      "Generate an overall summary review comment: number of issues by severity, top 3 most critical issues, overall assessment.",
+      "Add smart filtering: skip auto-generated files, skip files with only whitespace/comment changes, skip test files for certain review categories.",
+      "Add a config file (.ai-review.yml) in the repo to customize: which review categories to enable, severity threshold for blocking, files to ignore.",
+      "Add cost guard: if diff is >5000 lines, review only the most changed files first.",
+      "Create a sample repo with intentional bugs, security issues, and performance problems to demo the tool."
+    ],
+    "achieved": "Learned GitHub Actions CI/CD, the GitHub REST API via PyGitHub, diff parsing, and automated code analysis. This is your first DevOps-integrated AI tool — it runs automatically in every software team's workflow.",
+    "progression": "Days 1-9 were standalone apps you run manually. Day 10 integrates AI into an existing workflow (GitHub CI/CD). This is production-grade: it runs automatically on real codebases. You now understand AI as infrastructure."
+  },
+
+  # PHASE 2
+  {
+    "day": 11, "phase": 2,
+    "title": "Multi-PDF Research Assistant with Exact Citations",
+    "problem": "Researchers, analysts, and students work with dozens of papers simultaneously. Existing tools either hallucinate references or require manual reading. The core challenge is grounding AI answers in actual source documents — returning exact page numbers and paragraph locations, not made-up citations. Most RAG systems fail at citation quality.",
+    "solution": "Build a research assistant that ingests up to 20 PDFs simultaneously. Users can ask questions across all papers and receive answers that cite the exact paper title, page number, and quoted sentence. The system uses a hierarchical retrieval strategy to maximize citation accuracy.",
+    "stack": ["Python", "LangChain", "ChromaDB", "Groq API", "PyMuPDF", "Sentence Transformers", "FastAPI", "React", "metadata filtering"],
+    "steps": [
+      "Build a multi-document ingestion pipeline. For each PDF: extract text per page, create chunks of 300 tokens with 30 token overlap, store metadata: {paper_title, author, year, page_number, chunk_index, doi}.",
+      "Implement hierarchical indexing: store both chunk-level and page-level embeddings. Chunk-level for precise retrieval, page-level for context expansion.",
+      "Build a citation-aware retrieval function: retrieve top-5 chunks, expand each to its full page for context, deduplicate by page.",
+      "Implement the citation format: each piece of evidence gets tagged with [Paper: Title, Page: N, Paragraph: M] inline in the answer.",
+      "Add cross-paper synthesis: when multiple papers discuss the same topic, the LLM synthesizes them and notes agreements/contradictions.",
+      "Build a React frontend with a document library panel (left), chat interface (center), source viewer panel (right) that shows the original PDF page when a citation is clicked.",
+      "Add paper metadata extraction: use LLM to extract title, authors, year, abstract, and key contributions from each paper on upload.",
+      "Implement query routing: for narrow factual questions, use exact retrieval; for broad synthesis questions, use multi-document summarization.",
+      "Add a 'gaps in literature' feature: given a research question, what aspects are NOT covered by the uploaded papers?",
+      "Add export to reference manager format (BibTeX, RIS)."
+    ],
+    "achieved": "Mastered citation-accurate RAG, hierarchical document indexing, multi-document synthesis, and building a professional research tool UI. This is the first project complex enough to demo at an interview.",
+    "progression": "Day 3 built a simple single-index RAG. Day 11 introduces multi-document RAG with proper citation tracking, metadata filtering, and hierarchical retrieval — a major technical leap in RAG sophistication."
+  },
+  {
+    "day": 12, "phase": 2,
+    "title": "Company Knowledge Base Chatbot with Auto-Ingestion",
+    "problem": "Companies have knowledge spread across Notion, Confluence, Google Drive, internal wikis, and Slack. New employees take months to get up to speed. Experienced employees waste 20% of their time searching for information. No one knows what information exists or is current. Existing chatbots answer generic questions — not company-specific ones.",
+    "solution": "Build an enterprise knowledge base chatbot that ingests pages from Notion, Confluence, or any website sitemap. Answers questions with source links. Handles stale information by tracking document last-modified dates and warning when answering from old content.",
+    "stack": ["Python", "LangChain", "Pinecone", "Groq API", "Notion API / Confluence API", "FastAPI", "WebSocket", "Next.js", "PostgreSQL"],
+    "steps": [
+      "Build connectors for multiple sources: Notion (using notion-client), Confluence (using atlassian-python-api), sitemap crawler (using Scrapy or BeautifulSoup + requests).",
+      "Each document gets normalized into a standard format: {source_type, title, url, content, last_modified, tags}.",
+      "Implement incremental ingestion: on each sync, check last_modified against stored version. Only re-embed changed documents.",
+      "Use Pinecone for vector storage with namespace isolation: each department gets its own namespace for access control.",
+      "Build a query pipeline with source weighting: recent documents score higher than old ones. Documents from 'official' sources (HR, Engineering) rank higher than personal notes.",
+      "Implement the chatbot with conversation memory using LangChain ConversationBufferWindowMemory. Keep last 5 turns.",
+      "Build WebSocket-based streaming for real-time response typing effect in the frontend.",
+      "Add access control: users only see documents from their department's namespace + public namespaces.",
+      "Build a Next.js frontend with a Slack-like interface, document upload area, and admin panel showing ingestion status.",
+      "Add a feedback loop: thumbs up/down on each answer trains a preference model to rerank results."
+    ],
+    "achieved": "Learned enterprise API integrations (Notion, Confluence), incremental data pipelines, WebSocket streaming, Pinecone namespaces for multi-tenancy, and access control patterns for AI systems.",
+    "progression": "Day 11 was a local research tool for one user. Day 12 is a multi-user enterprise system with API integrations, access control, and real-time streaming. This is production enterprise architecture."
+  },
+  {
+    "day": 13, "phase": 2,
+    "title": "Semantic Product Recommendation Engine",
+    "problem": "Traditional e-commerce search uses keyword matching — if you search 'warm jacket for winter hiking', you might miss a product listed as 'insulated mountain trekking coat'. Recommendation engines based on purchase history don't work for new users (cold start problem). Most product search is either too literal or relies on past behavior.",
+    "solution": "Build a semantic product search and recommendation engine. Products are embedded using their descriptions, attributes, and user reviews. A user describes what they want in natural language and gets semantically matching products — even with different terminology.",
+    "stack": ["Python", "Sentence Transformers (all-MiniLM-L6-v2)", "Pinecone", "FastAPI", "Next.js", "Groq API", "Pandas", "ColBERT-style reranking"],
+    "steps": [
+      "Prepare product data: use a dataset (Amazon products, or generate synthetic). Each product has: title, description, category, attributes (JSON), price, rating.",
+      "Create rich product embeddings: concatenate title + description + attributes into a single text, embed using Sentence Transformers. Store in Pinecone with metadata.",
+      "Build a user query understanding step: before searching, use LLM to expand the query — extract explicit requirements, implicit needs, and anti-requirements.",
+      "Example: 'warm jacket for hiking' → {needs: ['insulation', 'waterproof', 'lightweight'], context: 'outdoor/hiking', budget_signal: 'none'}.",
+      "Implement hybrid search: combine dense semantic search (Pinecone) with sparse keyword search (BM25 via rank_bm25). Merge with RRF (Reciprocal Rank Fusion).",
+      "Add a reranking step: use a cross-encoder to rerank top-20 results to top-5. This significantly improves precision.",
+      "Build personalization: track user interactions (clicks, views, purchases) in PostgreSQL. Blend with semantic scores.",
+      "Build a 'complete the look' feature: given a product, find semantically complementary products.",
+      "Build the Next.js frontend with a natural language search bar, filter panel, product grid with semantic match score explanation.",
+      "Add A/B test capability: compare semantic search vs keyword search click-through rates."
+    ],
+    "achieved": "Mastered semantic search fundamentals, hybrid search with RRF, query expansion techniques, cross-encoder reranking, and building a production recommendation system. This is core data science + AI engineering.",
+    "progression": "Day 12 was RAG for document Q&A. Day 13 applies embeddings to product search — a completely different use case. You learn query expansion and reranking, two techniques that make RAG and search dramatically better."
+  },
+  {
+    "day": 14, "phase": 2,
+    "title": "Personalized Daily Newsletter Curator",
+    "problem": "Information overload is the defining challenge of the internet age. People subscribe to 20+ newsletters but only care about 10% of the content. Reading time is scarce. There is no tool that learns what you actually care about, curates content from all your sources, removes duplicates, and delivers a personalized daily digest ranked by personal relevance.",
+    "solution": "Build a personalization engine that ingests RSS feeds and newsletters, learns user preferences from explicit ratings and implicit behavior, removes duplicate stories across sources, and generates a ranked daily digest with AI summaries of each story.",
+    "stack": ["Python", "feedparser", "Sentence Transformers (embeddings)", "Groq API", "PostgreSQL", "Celery + Redis", "FastAPI", "React", "scikit-learn"],
+    "steps": [
+      "Build RSS/Atom feed ingestion using feedparser. Support any RSS URL. Store articles in PostgreSQL: {url, title, content, published_date, source_name, embedding}.",
+      "Compute article embeddings on ingestion using Sentence Transformers. Store as pgvector extension in PostgreSQL.",
+      "Build duplicate detection: compute cosine similarity between new articles and last 7 days. Articles with similarity > 0.85 are deduplicated, keeping the highest-quality source.",
+      "Build the preference model: store user ratings (1-5 stars) per article. Train a simple logistic regression on embedding features. Update daily.",
+      "For cold-start users: ask 5 topic questions on signup, create a preference profile from sample articles for those topics.",
+      "Build the ranking pipeline: for each new article, compute: relevance score (cosine sim to preference profile), recency score, source quality score. Weighted sum.",
+      "Use Groq to generate a 3-sentence personalized summary for each top-10 article, tailored to what the user already knows.",
+      "Set up Celery beat to run ingestion hourly and digest generation at 7 AM daily.",
+      "Build the React reader interface: left sidebar (source list), center (article list ranked), right (full article + AI summary), rating buttons.",
+      "Add email delivery using Resend API with a beautiful HTML email template."
+    ],
+    "achieved": "Learned RSS feed processing, preference learning with embeddings, duplicate detection, Celery task queues, and personalization system design. First time building a learning system that improves over time.",
+    "progression": "Day 14 introduces machine learning-based personalization — the system learns from user behavior. This is your first feedback loop system, where AI output improves based on user signals."
+  },
+  {
+    "day": 15, "phase": 2,
+    "title": "Customer Support Ticket Auto-Router and Reply Drafter",
+    "problem": "Customer support teams receive hundreds of tickets daily. Agents manually read each ticket, determine the category, assign to the right team, and draft responses. This takes 15-20 minutes per ticket just for routing and initial response. Routing mistakes cause customer frustration and SLA violations. New agents don't know which team handles what.",
+    "solution": "Build an intelligent ticket processing system that automatically classifies tickets by category and urgency, extracts structured data (product mentioned, sentiment, customer tier), routes to the correct team queue, and drafts an initial response for the agent to review and send.",
+    "stack": ["Python", "LangChain", "Groq API", "FastAPI", "Pydantic", "PostgreSQL", "React", "WebSockets", "email parsing (mailparser)"],
+    "steps": [
+      "Build email ingestion: parse incoming emails via IMAP or webhook. Extract: sender email, subject, body, thread ID, attachments list.",
+      "Define TicketAnalysis Pydantic model: category (billing/technical/account/general), urgency (critical/high/medium/low), sentiment (angry/neutral/positive), product_mentioned, customer_tier, key_entities, one_line_summary.",
+      "Build a two-step classification chain: first extract entities and context, then classify using those entities. This two-step approach is more accurate than single-step.",
+      "Build a routing rules engine: map (category, urgency, product) → team_queue. Store rules in PostgreSQL, editable by admins.",
+      "Build a similar-ticket retriever: embed the ticket and find the 3 most similar past resolved tickets. Show their resolutions to the agent as suggested responses.",
+      "Generate a draft reply using Groq: use the ticket content + similar resolved tickets + company tone guidelines in the prompt.",
+      "Build a FastAPI backend with WebSocket support for real-time ticket updates. Agents see new tickets appear instantly.",
+      "Build a React dashboard: ticket queue (left), ticket detail with AI analysis (right), draft reply editor, team performance metrics.",
+      "Add SLA tracking: tickets approaching deadline get highlighted. Overdue tickets auto-escalate.",
+      "Add a learning loop: when agents edit the AI draft significantly, log the original + edited pair for future prompt improvement."
+    ],
+    "achieved": "Learned email parsing, multi-step classification, RAG for similar-ticket retrieval, SLA tracking systems, and real-time WebSocket updates. This is production customer support automation.",
+    "progression": "Day 15 combines classification, RAG, and structured extraction into one pipeline. You see how real AI products use multiple AI techniques together — not just one model call."
+  },
+  {
+    "day": 16, "phase": 2,
+    "title": "Semantic Code Search Over GitHub Repositories",
+    "problem": "Large codebases with hundreds of files are nearly impossible to navigate without knowing the exact function/variable name. grep and IDE search require you to know what you're looking for. New engineers on large teams spend weeks just understanding where things are. There is no tool that lets you ask 'where is authentication handled?' and get the right code back.",
+    "solution": "Build a codebase indexer that understands code semantically. Users point it at a GitHub repo, it indexes all code files with function-level chunking, and they can ask natural language questions. The system returns relevant code snippets with file paths and explanations.",
+    "stack": ["Python", "LangChain", "tree-sitter (AST parsing)", "ChromaDB", "Groq API", "Sentence Transformers (code-aware)", "Streamlit", "GitHub API (PyGitHub)"],
+    "steps": [
+      "Clone or download a GitHub repo using PyGitHub or git clone. Build a file traversal that respects .gitignore and skips binary files.",
+      "Use tree-sitter to parse code files (Python, JavaScript, TypeScript, Java) into ASTs. Extract function definitions, class definitions, and their docstrings.",
+      "Create semantic chunks at the function/class level (not arbitrary token windows). Each chunk: {code, function_name, file_path, line_start, line_end, language, docstring}.",
+      "Use a code-aware embedding model: microsoft/codebert-base or all-mpnet-base-v2. These understand code semantics better than generic models.",
+      "Store in ChromaDB with rich metadata. Enable metadata filtering: users can scope search to specific folders or languages.",
+      "Build a query understanding step: for a question like 'how does authentication work?', expand to related code concepts: auth, login, token, session, JWT, middleware.",
+      "Retrieve top-10 code chunks, pass to Groq with the question. Ask for: which chunks are most relevant and why, an explanation of how the code works, a flow diagram in text.",
+      "Build a Streamlit UI with syntax-highlighted code display (using streamlit-code-editor), file tree sidebar, and conversation history.",
+      "Add code navigation: clicking a result shows the full file with the relevant section highlighted.",
+      "Add a 'summarize this repo' feature: generate a comprehensive README if one doesn't exist."
+    ],
+    "achieved": "Learned AST-based code parsing with tree-sitter, code-aware embeddings, and building a developer tool. This is genuinely useful for any software team and shows deep technical thinking.",
+    "progression": "Day 16 applies RAG to code — a domain that requires understanding structure (functions, classes) rather than just text. AST parsing for chunking is a technique that separates good AI engineers from great ones."
+  },
+  {
+    "day": 17, "phase": 2,
+    "title": "Medical Symptom Journal with Pattern Analysis",
+    "problem": "People with chronic conditions log symptoms inconsistently and can't see patterns. Doctors make decisions with incomplete information because patients can't remember their symptoms accurately. Paper journals are unsearchable. Generic apps don't analyze patterns or correlate symptoms with lifestyle factors.",
+    "solution": "Build a symptom journaling app where users log daily symptoms, medications, sleep, diet, and mood. An AI engine analyzes the journal to find correlations, patterns, and trends. Generate a doctor-ready summary report.",
+    "stack": ["Python", "FastAPI", "PostgreSQL", "LangChain", "ChromaDB", "Groq API", "React", "Recharts (visualization)", "pgvector"],
+    "steps": [
+      "Design the data model: daily_logs (date, user_id, symptoms JSON, medications JSON, sleep_hours, mood_score, energy_level, diet_notes, pain_scale). Use flexible JSON for symptoms to support any condition.",
+      "Build natural language log entry: users write 'Woke up with a headache, 6/10 pain, took ibuprofen, poor sleep' and the LLM extracts structured data into the JSON schema.",
+      "Implement time-series analysis: for each symptom, compute 7-day and 30-day moving averages. Detect anomalies (unusual spikes) using simple z-score calculation.",
+      "Build a correlation finder: embed each log entry, find clusters of similar days, identify what factors were common on high-symptom days vs low-symptom days.",
+      "Implement the RAG layer: store medical literature chunks about common conditions. When patterns are detected (e.g., symptoms always worse on low-sleep nights), retrieve relevant medical context.",
+      "Generate weekly AI insights: 'Your headache severity correlates strongly with sleep under 6 hours (r=0.78). On days with poor sleep, headaches occurred 85% of the time.'",
+      "Build doctor report generator: structured PDF report showing symptom timelines, top correlations, medication effectiveness, and questions to discuss with doctor.",
+      "Add a React dashboard with interactive charts (Recharts): symptom over time, correlation heatmap, calendar view colored by symptom severity.",
+      "Add medication effectiveness tracking: correlate symptom reduction with medication timing and dosage.",
+      "Add export to PDF, share link for doctor access."
+    ],
+    "achieved": "Learned natural language data entry with structured extraction, time-series analysis, correlation detection with embeddings, and medical data visualization. First healthcare AI application.",
+    "progression": "Day 17 combines data ingestion, time-series analysis, correlation detection, and RAG into a health-tech product. You see how AI engineering intersects with data science for real-world impact."
+  },
+  {
+    "day": 18, "phase": 2,
+    "title": "Competitive Intelligence Dashboard",
+    "problem": "Businesses need to track competitors constantly but the manual process is overwhelming. Marketing teams spend 10+ hours weekly monitoring competitor websites, press releases, LinkedIn updates, and product changes. By the time they react, the information is days old. There is no affordable, automated system that tracks competitors and surfaces strategic insights.",
+    "solution": "Build an automated competitive intelligence system. Define a list of competitors with their URLs and social profiles. The system scrapes weekly, diffs content changes, extracts strategic signals, and generates an executive intelligence report.",
+    "stack": ["Python", "Playwright (headless browser)", "LangChain", "Groq API", "PostgreSQL", "embeddings (change detection)", "Celery + Redis", "FastAPI", "React"],
+    "steps": [
+      "Build a web scraper using Playwright to handle JavaScript-heavy sites. Extract: homepage copy, pricing page, product features page, blog posts, about page.",
+      "Implement content diffing: store the previous version of each page. On new scrape, compute diff. Use text-level diffing (difflib) plus semantic diffing (embedding similarity).",
+      "Classify changes: use LLM to determine change type: pricing change, new feature, new market focus, leadership change, partnership announcement.",
+      "Build the signal extraction pipeline: for each significant change, extract: what changed, strategic implication, recommended response, urgency level.",
+      "Add social media monitoring: use Twitter/LinkedIn APIs to track company and executive posts. Embed and store for semantic search.",
+      "Generate weekly intelligence briefings: by competitor, by change type, by strategic theme. Use Groq to write executive-style prose summaries.",
+      "Build the React dashboard with: competitor overview cards, change timeline per competitor, strategic signal feed, weekly briefing download.",
+      "Add email alerts for high-priority signals (e.g., competitor launches a direct competing feature).",
+      "Add a question-answering mode: 'What is Competitor X's pricing strategy?' answers from scraped data.",
+      "Schedule all scraping and analysis jobs with Celery beat."
+    ],
+    "achieved": "Learned headless browser automation with Playwright, content diffing, semantic change detection, business intelligence generation, and task queue management with Celery.",
+    "progression": "Day 18 adds web scraping as an AI data source — a major capability expansion. You can now build AI systems that gather their own data from the web, not just process uploaded documents."
+  },
+  {
+    "day": 19, "phase": 2,
+    "title": "Podcast Episode Chapter Generator and RSS Publisher",
+    "problem": "Podcast creators spend hours manually writing show notes, timestamps, and episode descriptions. Small creators can't afford editors. Listeners have no way to navigate long episodes to find relevant content. Podcast SEO depends on rich show notes that most creators don't write consistently.",
+    "solution": "Build a tool for podcast creators: upload audio → get auto-generated transcript, timestamps, chapter titles, show notes, keywords, and a formatted RSS-ready description. Integrate with podcast hosting platforms.",
+    "stack": ["Python", "OpenAI Whisper", "LangChain", "Groq API", "FastAPI", "pydub (audio processing)", "feedgen (RSS)", "React", "ffmpeg"],
+    "steps": [
+      "Build audio preprocessing with pydub: split long audio into 10-minute chunks for Whisper processing. Normalize audio levels, remove silence at start/end.",
+      "Run Whisper on each chunk and stitch transcripts with corrected timestamps. Handle chunk boundary continuity.",
+      "Build a topic segmentation algorithm: embed each 30-second transcript segment. Run k-means clustering to find k natural topic breaks. Use the cluster boundaries as chapter markers.",
+      "Use Groq to generate per-chapter content: chapter title (6-8 words), 2-sentence summary, key quote from the chapter.",
+      "Generate full show notes: guest bio (if mentioned), topics discussed, resources mentioned, key takeaways, timestamp list.",
+      "Extract SEO keywords: people mentioned, companies mentioned, topics covered — structured for podcast platforms.",
+      "Generate a 5-sentence episode description optimized for podcast app search.",
+      "Build RSS feed generation using feedgen: create properly formatted RSS 2.0 with iTunes podcast tags.",
+      "Build a React frontend with audio player synchronized to transcript, chapter navigation, and copy-all-to-clipboard.",
+      "Add a 'highlight reel' feature: identify the 5 most impactful moments (high information density segments) from the episode."
+    ],
+    "achieved": "Learned audio processing, transcript stitching across chunks, k-means topic segmentation, RSS feed generation, and podcast platform integrations. Audio + AI is a growing field.",
+    "progression": "Day 19 goes deeper on audio AI and introduces unsupervised clustering (k-means) for topic segmentation — your first ML algorithm beyond just calling an LLM. You start combining classical ML with generative AI."
+  },
+  {
+    "day": 20, "phase": 2,
+    "title": "Legal Document Q&A with Jurisdiction-Aware Answers",
+    "problem": "Legal advice is inaccessible to most people due to cost. Generic legal chatbots give incorrect or dangerously oversimplified answers. The core challenge is that legal rules vary dramatically by jurisdiction — what's true in California is not true in Texas or UK. A system that ignores jurisdiction can give harmful advice.",
+    "solution": "Build a legal Q&A system that ingests jurisdiction-specific legal documents (statutes, court decisions, regulations). Users specify their location before asking. The system retrieves jurisdiction-specific content and provides answers with prominent caveats, source citations, and jurisdiction notes.",
+    "stack": ["Python", "LangChain", "ChromaDB (multi-index)", "Groq API", "multi-index RAG", "Streamlit", "Pydantic", "PDF ingestion pipeline"],
+    "steps": [
+      "Build a multi-index RAG architecture: one ChromaDB collection per jurisdiction (e.g., california_law, federal_law, uk_law). This enables jurisdiction-filtered retrieval.",
+      "Ingest legal documents: PDF statutes, court opinions, regulatory guides. Apply legal-specific chunking: split at section headings (§ symbols), maintain section hierarchy in metadata.",
+      "Build the jurisdiction detection system: parse the user's location input and map to available legal collections. Always include federal/national law as a fallback.",
+      "Implement multi-collection retrieval: query both jurisdiction-specific and federal collections, merge results with jurisdiction-specific sources ranked higher.",
+      "Build a response structure that's mandatory for all answers: Direct Answer, Legal Basis (citations), Jurisdictional Notes, Important Caveats, Recommended Actions, Disclaimer.",
+      "Add a confidence scoring system: if the retrieved documents don't strongly support an answer, flag it as 'uncertain' and strongly recommend consulting a lawyer.",
+      "Build conflict detection: when federal and state law conflict on an issue, explicitly flag the conflict and explain which takes precedence.",
+      "Add document upload: users can upload their specific contract/document and ask questions grounded in both that document and the law.",
+      "Build a Streamlit interface with jurisdiction selector, document upload, Q&A interface, and a prominent legal disclaimer.",
+      "Add citation linking: each legal citation links to the public legal database (Google Scholar, CourtListener)."
+    ],
+    "achieved": "Mastered multi-index RAG, jurisdiction-aware retrieval, confidence scoring, and building responsible AI systems with appropriate caveats. Completed Phase 2 — you are now an intermediate RAG engineer.",
+    "progression": "Day 20 completes Phase 2. You now understand the full RAG landscape: single-doc, multi-doc, multi-index, jurisdiction-aware, with confidence scoring. This is expert-level RAG architecture."
+  },
+
+  # PHASE 3
+  {
+    "day": 21, "phase": 3,
+    "title": "Autonomous Data Analyst Agent",
+    "problem": "Business stakeholders want data insights but can't write Python or SQL. Data analysts are bottlenecks — every question takes days to answer. Ad-hoc analysis is manual, inconsistent, and doesn't scale. There is no system that can take a business question, write and run the analysis code, generate charts, and explain the findings — without human intervention.",
+    "solution": "Build an autonomous data analyst that accepts CSV uploads or database connections. Users ask business questions in English. The agent writes Python/SQL, executes it in a sandbox, interprets results, generates charts, and provides a written analysis — all automatically.",
+    "stack": ["Python", "LangChain Agents", "Code Interpreter tool", "Groq API", "Pandas", "Plotly", "RestrictedPython (sandboxed execution)", "FastAPI", "React"],
+    "steps": [
+      "This is your first LangChain Agent. Understand the ReAct loop: Thought → Action → Observation → Thought → ...",
+      "Build custom tools for the agent: PandasTool (execute Python code on the uploaded DataFrame), SQLTool (run SQL against a connected database), PlotTool (generate Plotly charts), StatsTool (run statistical tests).",
+      "Implement sandboxed code execution with RestrictedPython: the agent can only access the dataframe object, not the file system or network.",
+      "Build the agent orchestration: system prompt that describes available tools and the data schema, then let the agent plan and execute its analysis.",
+      "Add iterative refinement: if the agent's code throws an error, it sees the error in the Observation and tries to fix it. Allow up to 5 retry attempts.",
+      "Implement the analysis narrative generator: after collecting all results and charts, make a final LLM call to write a business-readable analysis report.",
+      "Add a 'follow-up question' capability: the agent remembers its previous analysis steps and can answer follow-ups without re-running everything.",
+      "Build a React frontend with: data upload and preview, question input, step-by-step agent thinking display, chart rendering (Plotly), narrative report.",
+      "Add analysis templates: pre-built analysis flows for common questions (cohort analysis, funnel analysis, trend analysis).",
+      "Add a 'share report' feature that generates a static HTML page of the analysis."
+    ],
+    "achieved": "Built your first LangChain Agent. Understood the ReAct reasoning loop, tool use, error recovery, and sandboxed code execution. This is a major architectural shift from chains to agents.",
+    "progression": "Days 1-20 used LangChain Chains — deterministic pipelines. Day 21 introduces Agents — the LLM decides what to do next based on observations. This is the most important concept shift in AI engineering."
+  },
+  {
+    "day": 22, "phase": 3,
+    "title": "Job Application Autopilot Agent",
+    "problem": "Job searching is exhausting and repetitive. Applicants spend 80% of their time on logistics: finding jobs, customizing resumes, writing cover letters. Most people send generic applications and wonder why they don't get callbacks. There is no system that automates the research and personalization of job applications at scale.",
+    "solution": "Build an agent that takes your master resume and target role/company preferences. It searches for matching jobs using web tools, analyzes each JD against your resume, customizes the resume bullet points for each application, and writes a personalized cover letter.",
+    "stack": ["Python", "LangChain Agents", "web search tool (SerpAPI or Tavily)", "Groq API", "PyMuPDF", "python-docx", "SQLite", "Streamlit"],
+    "steps": [
+      "Build the master resume parser: extract sections (Summary, Experience, Education, Skills) from the uploaded PDF resume. Store as structured JSON.",
+      "Build a web search tool for the agent using Tavily API or SerpAPI. The agent uses this to search for job postings and research companies.",
+      "Build the job extraction tool: given a job posting URL, scrape and extract: title, company, requirements, responsibilities, salary range.",
+      "Build the resume customization tool: given a job description and master resume, generate a tailored version that emphasizes matching experience and uses JD keywords.",
+      "Build the cover letter tool: given company research + JD + tailored resume, generate a compelling, specific cover letter that doesn't sound generic.",
+      "Build the agent orchestration: it uses these tools in sequence for each job. Search → Extract → Analyze fit → Customize → Write cover letter → Log application.",
+      "Add a fit score calculator: before customizing, score the match. Only proceed with high-fit jobs (score > 70).",
+      "Build SQLite storage for application tracking: company, role, status, date applied, resume version used, follow-up date.",
+      "Build Streamlit dashboard showing: application pipeline (Kanban-style), match scores, response rates by template.",
+      "Add interview prep: for applied jobs, generate likely interview questions based on the JD."
+    ],
+    "achieved": "Learned multi-tool agent orchestration, web search integration, document generation, and building an end-to-end workflow automation. This agent performs tasks that would take a human 30+ minutes per application.",
+    "progression": "Day 22 shows how agents can orchestrate multiple tools in sequence to complete a multi-step real-world workflow — a core pattern in production AI automation systems."
+  },
+  {
+    "day": 23, "phase": 3,
+    "title": "AI Travel Planner with Real-Time Pricing Data",
+    "problem": "Planning a trip involves dozens of decisions and 10+ hours of research: flights, hotels, activities, restaurants, transportation, visa requirements. Travel agencies are expensive. Generic AI chatbots give outdated pricing and don't actually book anything. Users want personalized plans with real pricing they can act on immediately.",
+    "solution": "Build a travel planning agent that takes trip parameters (destination, dates, budget, preferences) and creates a complete trip plan: flight options with real prices, hotel recommendations, day-by-day itinerary, restaurant suggestions, and a budget breakdown.",
+    "stack": ["Python", "LangChain Agents", "Amadeus API (flights/hotels)", "Groq API", "tool calling", "FastAPI", "React", "Mapbox GL", "Pydantic"],
+    "steps": [
+      "Register for Amadeus Travel API (free tier available). Build API client tools: FlightSearchTool, HotelSearchTool, ActivitySearchTool.",
+      "Build a destination research tool using web search: visa requirements for the user's nationality, best time to visit, local customs, safety advisories.",
+      "Build the itinerary generator tool: given destination + duration + interests (food/culture/adventure/relaxation), generate a day-by-day activity plan.",
+      "Build the budget calculator tool: given all selected options, compute total cost breakdown by category. Flag if over budget and suggest alternatives.",
+      "Orchestrate the agent: Clarify preferences → Research destination → Search flights → Search hotels → Generate itinerary → Calculate budget → Present plan.",
+      "Add an iterative refinement loop: 'Make it cheaper', 'Add more food experiences', 'I prefer boutique hotels' — the agent adjusts the plan.",
+      "Build the React frontend with an interactive map (Mapbox GL) showing the itinerary geographically. Click a pin to see activity details.",
+      "Add a packing list generator based on destination, activities, and weather forecast.",
+      "Add travel document checklist: passport validity, visa requirements, vaccinations, travel insurance.",
+      "Export plan as a beautiful PDF itinerary."
+    ],
+    "achieved": "Learned real-time external API integration in agents, interactive map visualization, iterative plan refinement, and multi-step travel domain reasoning.",
+    "progression": "Day 23 uses live API data inside agents. The agent makes decisions based on real pricing — not just text reasoning. Real-world AI agents must integrate with live data APIs constantly."
+  },
+  {
+    "day": 24, "phase": 3,
+    "title": "Multi-Agent Content Marketing Production System",
+    "problem": "Content marketing requires writing the same story for 5 different platforms in 5 different formats and tones: blog post, LinkedIn article, Twitter thread, email newsletter, Instagram caption. This takes a content team 6-8 hours. Small companies can't afford dedicated content teams. Single-agent systems produce generic content without platform-specific optimization.",
+    "solution": "Build a multi-agent content system with specialized agents: Researcher (finds latest data and facts), Writer (drafts long-form blog post), Strategist (defines platform-specific angles), Adapter agents per platform, and an Editor agent for quality control.",
+    "stack": ["Python", "LangChain multi-agent", "Groq API", "web search tool", "FastAPI", "React", "content quality scoring", "Agent communication"],
+    "steps": [
+      "Design the multi-agent architecture: understand how agents communicate. Use a shared state dictionary that all agents can read and write to.",
+      "Build the Research Agent: given a topic, it uses web search tools to find: latest statistics, expert quotes, case studies, trending angles. Returns a research brief.",
+      "Build the Strategy Agent: given research brief + target persona, determines: core message, platform-specific angles, tone per platform, hook ideas.",
+      "Build the Writer Agent: given research + strategy, writes a 1200-word blog post with SEO structure (H2s, bullet points, CTA).",
+      "Build specialized Adapter Agents: LinkedIn Adapter (professional tone, 800 words), Twitter Adapter (thread of 8-10 tweets with hooks), Email Adapter (subject + body for newsletter), Instagram Adapter (caption + hashtags).",
+      "Build the Editor Agent: reviews all outputs for: factual accuracy, brand voice consistency, platform best practices, grammar. Returns pass/fail with specific feedback.",
+      "Implement a revision loop: if Editor rejects, the relevant agent gets the feedback and revises. Max 2 rounds.",
+      "Build the orchestrator that coordinates all agents in sequence and manages state.",
+      "Build React frontend with a content brief input, agent progress visualization (shows which agent is working), side-by-side platform preview.",
+      "Add brand voice customization: upload existing content, extract voice characteristics, apply to all agents."
+    ],
+    "achieved": "Mastered multi-agent architecture, agent communication via shared state, specialization vs generalization in agent design, and quality control loops. This is the most complex system you've built so far.",
+    "progression": "Day 24 is a major architectural leap: multiple agents with different specializations working together. This is how production AI systems at scale are built — not one big agent but a team of specialized ones."
+  },
+  {
+    "day": 25, "phase": 3,
+    "title": "Financial Portfolio Analysis Agent",
+    "problem": "Individual investors lack the time and tools to perform thorough portfolio analysis. Financial advisors are expensive. Free tools provide basic charts but no AI-driven insights. Analyzing a portfolio requires correlating live prices, earnings reports, analyst sentiment, macroeconomic signals, and risk metrics — a task that would take a financial analyst hours.",
+    "solution": "Build a financial agent that takes a portfolio (list of tickers and positions), fetches live data, analyzes risk and diversification, summarizes recent news and earnings, and generates a structured buy/hold/sell analysis for each position.",
+    "stack": ["Python", "LangChain Agents", "yfinance", "web search tool (Tavily)", "Groq API", "Pydantic", "Pandas", "Plotly", "FastAPI"],
+    "steps": [
+      "Build the portfolio input: accept a CSV or JSON with holdings (ticker, shares, purchase_price, purchase_date).",
+      "Build financial data tools: PriceTool (yfinance real-time + historical), FundamentalsTool (P/E, EPS, revenue growth via yfinance), NewsTool (web search for recent earnings and news).",
+      "Build the risk analysis module: compute portfolio beta, Sharpe ratio, max drawdown, VaR (Value at Risk) using historical price data and Python calculations.",
+      "Build the correlation matrix: show how correlated holdings are. Flag when portfolio is poorly diversified (high correlation).",
+      "Build the earnings analysis tool: retrieve recent earnings reports, extract: beat/miss, guidance, key management commentary.",
+      "Build the sector allocation analyzer: break down portfolio by sector (using yfinance sector data). Compare to S&P 500 sector weights.",
+      "Orchestrate the agent: for each holding, gather all data → analyze fundamentals → assess technicals → review news → generate recommendation.",
+      "Generate a portfolio report: executive summary, individual stock analysis, risk metrics dashboard, suggested rebalancing actions.",
+      "Build Plotly visualizations: portfolio allocation pie chart, performance vs benchmark line chart, risk/return scatter plot.",
+      "Add disclaimer prominently: 'Not financial advice. For educational purposes only.' This is essential."
+    ],
+    "achieved": "Learned financial data APIs, quantitative risk metrics, portfolio analysis techniques, and building domain-specific financial AI tools. Financial AI is a growing field.",
+    "progression": "Day 25 combines quantitative analysis (risk metrics, correlations) with qualitative AI analysis (news, earnings). This pattern — structured data + AI reasoning — is the backbone of most enterprise AI applications."
+  },
+  {
+    "day": 26, "phase": 3,
+    "title": "LangGraph Stateful Interview Coach",
+    "problem": "Interview preparation is inefficient. People practice randomly without tracking weak areas. Generic interview guides don't adapt to individual performance. After each practice session, there is no structured feedback loop. The system doesn't remember what you struggled with last week and doesn't progressively increase difficulty.",
+    "solution": "Build a stateful interview prep system using LangGraph. The graph tracks your interview history across sessions, adapts question difficulty based on performance, identifies and drills weak topic areas, and provides detailed feedback on answers. State persists across days.",
+    "stack": ["Python", "LangGraph", "Groq API", "SQLite (persistent state)", "FastAPI", "React", "Pydantic", "session management"],
+    "steps": [
+      "This is your first LangGraph project. Understand the fundamental difference from chains: LangGraph is a stateful graph where nodes are functions and edges define transitions between states.",
+      "Define the interview state: TypedDict with fields: session_id, candidate_name, target_role, question_history (list), performance_scores (dict by topic), current_question, answer, feedback, session_phase.",
+      "Build the graph nodes: QuestionGeneratorNode (generates next question based on state), EvaluatorNode (scores the answer), FeedbackNode (detailed feedback), DifficultyAdapterNode (adjusts difficulty).",
+      "Build the graph edges: after evaluation, route to follow-up (if answer was shallow) or next question (if complete). After 10 questions, route to session summary.",
+      "Implement persistent state: after each session, save state to SQLite. Load on return. Candidate can continue where they left off.",
+      "Build the difficulty adaptation logic: if scoring >80% on a topic, increase difficulty. If <50%, review fundamentals. Track scores per topic area over time.",
+      "Add a 'weakness drill' mode: identifies the lowest-scoring topic from history and does a focused 15-minute drill session.",
+      "Build the feedback engine: detailed feedback per answer including: what was good, what was missing, ideal answer structure, follow-up question the interviewer would likely ask.",
+      "Build React frontend with: question display, answer text area, real-time feedback panel, performance history chart, topic breakdown radar chart.",
+      "Add session scheduling: remind user to practice (email/notification)."
+    ],
+    "achieved": "Mastered LangGraph fundamentals: state definition, nodes, edges, conditional routing, and persistent state. LangGraph is the most important library for production AI agents in 2025.",
+    "progression": "This is the most important technical leap of the entire 50 days. LangGraph introduces stateful, graph-based AI workflows — the architecture used by virtually every production AI agent system at top tech companies."
+  },
+  {
+    "day": 27, "phase": 3,
+    "title": "LangGraph Autonomous Bug-Fixing Pipeline",
+    "problem": "Fixing bugs requires a cycle of reading error → understanding code → proposing fix → testing → repeating. This is exactly the kind of repetitive, structured task that AI should be able to do autonomously. Current AI coding tools require constant human guidance at each step. There is no system that takes a failing test and autonomously loops until it's green.",
+    "solution": "Build a LangGraph-based autonomous debugging pipeline. It receives a GitHub issue or failing test, reads the relevant code, generates a fix, runs the tests in a Docker sandbox, sees the results, and iterates until tests pass or it exhausts its attempts.",
+    "stack": ["Python", "LangGraph", "Groq API", "subprocess (test runner)", "Docker (sandboxed execution)", "GitPython", "pytest", "AST analysis"],
+    "steps": [
+      "Design the LangGraph state: TypedDict with failing_test, error_message, code_files (dict of filename→content), fix_attempts (list), current_fix, test_results, iteration_count, success.",
+      "Build the CodeReaderNode: given the failing test and error, use AST analysis to find relevant functions and files. Return the minimal code context needed.",
+      "Build the FixGeneratorNode: given error + code context, generate a specific code fix. Output structured: {file_path, old_code, new_code, explanation}.",
+      "Build the CodeApplierNode: apply the fix to the working directory. Use difflib to apply patches safely.",
+      "Build the TestRunnerNode: run pytest in a subprocess with a timeout. Parse the output: extract pass/fail status, new error message if failed.",
+      "Build the EvaluatorNode: analyze test results. If passed → success. If failed → determine if making progress or stuck. If stuck 3 times → try a different approach.",
+      "Build the graph edges: conditional routing based on test results. Success → finish. Failure + iterations < 5 → loop back to FixGenerator with new context. Failure + iterations >= 5 → escalate to human.",
+      "Add a Git integration: commit successful fixes with an auto-generated commit message describing the bug and fix.",
+      "Add observability: log each iteration with LangSmith. View the full reasoning trace.",
+      "Test on a set of intentionally buggy Python functions."
+    ],
+    "achieved": "Built a complete autonomous code-fix loop with LangGraph. Learned conditional graph routing, iterative self-correction, sandboxed code execution, and observability with LangSmith.",
+    "progression": "Day 27 shows LangGraph's power for iterative, self-correcting workflows. The agent keeps trying until it succeeds — this feedback loop pattern is what makes agentic AI genuinely autonomous."
+  },
+  {
+    "day": 28, "phase": 3,
+    "title": "Customer Churn Prediction and AI Retention Agent",
+    "problem": "Acquiring a new customer costs 5-7x more than retaining an existing one. Most companies only realize a customer is about to churn after they've already left. Manual retention outreach is expensive and untargeted. There is no system that automatically identifies at-risk customers and takes personalized retention actions.",
+    "solution": "Build an end-to-end churn prevention system: ML model to predict churn probability from behavioral data, AI agent that generates personalized retention strategies per customer, automated email drafts, and a dashboard for the customer success team.",
+    "stack": ["Python", "scikit-learn (churn model)", "LangChain", "Groq API", "FastAPI", "PostgreSQL", "Pandas", "Streamlit", "Celery"],
+    "steps": [
+      "Design synthetic customer behavioral data: last_login_days, sessions_last_30d, feature_usage_score, support_tickets, plan_type, mrr, account_age_months. Generate 5000 rows with realistic churn patterns.",
+      "Train a Random Forest churn classifier using scikit-learn. Feature engineering: derive recency/frequency/monetary (RFM) scores. Evaluate with ROC-AUC, precision@recall.",
+      "Build a risk segmentation: low risk (<30%), medium (30-60%), high (>60%). Each segment gets different intervention strategies.",
+      "For high-risk customers, build the AI analysis step: given customer's behavioral profile and account history, use Groq to generate: why they're likely churning, what would retain them, which specific features they haven't tried, recommended offer.",
+      "Build personalized email drafts: the AI writes a specific, non-generic retention email referencing the customer's actual usage patterns.",
+      "Build the intervention workflow: Celery runs nightly, scores all customers, queues interventions for the next business day.",
+      "Build a Streamlit dashboard for customer success team: at-risk customer list, intervention queue, email preview and send, outcome tracking.",
+      "Add A/B testing for retention messages: track email open rates and conversion by message variant.",
+      "Add model retraining: weekly retrain with new outcome data (did the customer churn after intervention?).",
+      "Add Slack alerts for enterprise customers entering high-risk zone."
+    ],
+    "achieved": "Combined classical ML (Random Forest) with generative AI (personalized messages). Learned the full MLOps cycle: data prep, training, scoring, intervention, and retraining. First ML + AI integrated project.",
+    "progression": "Day 28 is critical: you combine traditional ML with LLMs. This is how real AI products work — not just LLMs, but ML models for prediction + LLMs for generation and reasoning. This combination is highly valued."
+  },
+  {
+    "day": 29, "phase": 3,
+    "title": "AI-Powered API Documentation Generator",
+    "problem": "Writing and maintaining API documentation is one of the most neglected tasks in software development. Most APIs are underdocumented, leading to integration failures, support burden, and slow developer adoption. Writing good docs is time-consuming: OpenAPI specs, usage examples, error code explanations, authentication guides — each requires deep code understanding.",
+    "solution": "Build a documentation generator that points at any Python/Node.js codebase, analyzes the API routes using AST parsing, infers the complete OpenAPI spec, writes usage examples in multiple languages, explains authentication, and generates a complete docs site.",
+    "stack": ["Python", "AST parsing (ast module)", "LangChain", "Groq API", "FastAPI", "Swagger UI", "Jinja2", "PyGitHub", "typescript-ast (ts-morph)"],
+    "steps": [
+      "Build the Python AST parser: parse FastAPI/Flask routes to extract: HTTP method, path, path parameters, query parameters, request body schema, response schema, function docstring.",
+      "Build the TypeScript AST parser using ts-morph (call as subprocess): extract Express/NestJS route definitions.",
+      "For each endpoint, make an LLM call to: infer what the endpoint does from its code, generate a natural language description, generate example request/response JSON, list common error scenarios.",
+      "Generate the OpenAPI 3.0 specification JSON from extracted + inferred data. Validate it using openapi-spec-validator.",
+      "Generate usage examples for each endpoint in: Python (requests), JavaScript (fetch), cURL, and TypeScript.",
+      "Generate an authentication guide: detect the auth mechanism from the code (JWT, API key, OAuth), explain how to obtain credentials and include them in requests.",
+      "Generate error code documentation: list all HTTP errors the API can return with explanations and resolution steps.",
+      "Render the Swagger UI using the generated OpenAPI spec. Host it as a static HTML page.",
+      "Generate a complete docs site using Jinja2 templates: getting started guide, endpoint reference, authentication, examples.",
+      "Add GitHub Action integration: automatically regenerate docs on every push to main."
+    ],
+    "achieved": "Mastered AST-based code analysis, OpenAPI spec generation, documentation site generation, and automated doc publishing. Developer tools are among the most valued AI applications.",
+    "progression": "Day 29 uses AST parsing to understand code structure — a technique you first saw on Day 16. Now you use it for documentation generation. AST analysis is becoming a core skill in your toolkit."
+  },
+  {
+    "day": 30, "phase": 3,
+    "title": "Real Estate Deal Analyzer Agent",
+    "problem": "Real estate investment analysis requires synthesizing: property listing data, comparable sales (comps), rental market rates, property tax data, zoning information, neighborhood trends, school ratings, and ROI calculations. Investors spend 2-3 hours per property just on initial analysis. Most deals are passed over not because they're bad but because analysis takes too long.",
+    "solution": "Build an investment property analysis agent. Feed it a Zillow/Redfin URL or property details. It researches comps, estimates rental income, calculates ROI metrics, checks zoning, analyzes the neighborhood, and delivers an investment verdict in 5 minutes.",
+    "stack": ["Python", "LangChain Agents", "web scraping (Playwright)", "Groq API", "calculations engine", "Streamlit", "Mapbox", "Pydantic"],
+    "steps": [
+      "Build the property data extractor: given a listing URL, scrape key data — address, price, square footage, bedrooms, bathrooms, lot size, HOA fees, tax history.",
+      "Build the comparables (comps) finder: web search for recently sold similar properties in the same zip code. Extract prices and calculate price per square foot.",
+      "Build the rental market research tool: web search for rental listings in the area. Estimate market rent for this property based on size and bedrooms.",
+      "Build the financial calculator tool (pure Python): given purchase price, down payment, mortgage rate, rental income, expenses → calculate NOI, cap rate, cash-on-cash return, gross rent multiplier, cash flow.",
+      "Build the neighborhood analyzer: web search for school ratings, crime statistics, walk score, public transit score, proximity to employers.",
+      "Build the zoning checker: web search for the property's zoning designation and what it allows (rental, commercial, ADU).",
+      "Orchestrate the agent: gather all data → run financial calculations → analyze neighborhood → assess risk → generate investment verdict.",
+      "Generate a structured investment memo: Deal Summary, Financial Analysis (with scenarios: conservative/base/optimistic), Neighborhood Analysis, Risk Factors, Investment Verdict (Buy/Pass/Negotiate).",
+      "Build Streamlit UI with embedded map, financial metrics cards, risk score gauge, and downloadable PDF report.",
+      "Add portfolio mode: analyze 5 properties simultaneously and rank by investment score."
+    ],
+    "achieved": "Built a domain-specific real estate analysis agent combining web research, financial calculations, and investment reasoning. This shows AI engineering applied to a $20T industry.",
+    "progression": "Day 30 completes Phase 2 of agent development. You've now built agents for data analysis, job search, travel, content, finance, and real estate. You understand how to adapt the agent pattern to any domain."
+  },
+  {
+    "day": 31, "phase": 3,
+    "title": "Social Media Brand Monitor and AI Response Agent",
+    "problem": "Negative social media mentions can damage a brand within hours. Companies monitor social media manually or with expensive tools. Responding to every mention is impossible at scale. Generic responses feel robotic and damage the brand further. Small businesses have no affordable way to do real-time brand monitoring with intelligent, contextual responses.",
+    "solution": "Build a brand monitoring system that tracks Twitter/Reddit/HackerNews for brand mentions, classifies sentiment and urgency, generates contextual response drafts, and alerts the social media team with a one-click approval workflow.",
+    "stack": ["Python", "Twitter API v2 (tweepy)", "PRAW (Reddit API)", "LangChain", "Groq API", "FastAPI", "WebSockets", "PostgreSQL", "React"],
+    "steps": [
+      "Set up Twitter API v2 with tweepy: build a streaming listener for brand keyword mentions. Set up filtered stream rules.",
+      "Set up PRAW for Reddit: monitor specific subreddits and search mentions of the brand.",
+      "For each mention: extract context (thread, previous replies, user history), classify sentiment (positive/negative/neutral), classify urgency (crisis/complaint/question/compliment).",
+      "Build crisis detection: if multiple high-negative-urgency mentions appear within 1 hour, trigger an immediate Slack alert.",
+      "Build contextual response generation: given the mention + its thread context + brand guidelines, generate 3 response options of different tones (empathetic, informational, humorous).",
+      "Build the approval workflow: store draft responses in PostgreSQL. Social media manager reviews on the dashboard, edits if needed, approves with one click.",
+      "Build the posting integration: approved responses are posted via Twitter/Reddit API.",
+      "Build analytics: sentiment trend over time, mention volume by platform, response time metrics, resolution rate.",
+      "Build the React real-time dashboard with WebSocket updates showing incoming mentions, draft responses, approval queue, and analytics.",
+      "Add a brand voice training feature: upload 20 example past responses to establish tone guidelines used in generation."
+    ],
+    "achieved": "Learned Twitter and Reddit API streaming, real-time monitoring, crisis detection, approval workflows, and social media AI automation.",
+    "progression": "Day 31 introduces real-time streaming data — a very different pattern from batch processing. You build for continuous, real-time AI response rather than on-demand queries."
+  },
+  {
+    "day": 32, "phase": 3,
+    "title": "Automated A/B Test Hypothesis Generator",
+    "problem": "Product teams run A/B tests but struggle to generate good hypotheses. Most tests are based on gut feel rather than data. Identifying which specific flows have the most optimization opportunity requires hours of funnel analysis. Data scientists are often bottlenecks for generating test ideas. A/B test backlogs are full of vague hypotheses that won't move the needle.",
+    "solution": "Build a product analytics AI that ingests event data or analytics exports. It identifies underperforming funnel steps, generates specific, testable A/B hypotheses based on behavioral patterns, estimates potential impact, and prioritizes tests by expected lift.",
+    "stack": ["Python", "Pandas", "LangChain", "Groq API", "structured output", "Streamlit", "Plotly", "scikit-learn (statistical tests)", "scipy"],
+    "steps": [
+      "Build data ingestion: accept CSV exports from Mixpanel/Amplitude/Google Analytics, or a custom events table. Standardize into: user_id, event_name, timestamp, properties.",
+      "Build funnel analysis: given a defined funnel (e.g., landing → signup → activation → purchase), compute conversion rates and drop-off at each step.",
+      "Build cohort analysis: segment users by acquisition date, channel, device, geography. Identify cohorts with significantly different conversion rates.",
+      "Build behavioral pattern finder: for users who dropped at each step, analyze their behavior: time spent, features used, pages viewed. Identify divergences from converting users.",
+      "Build the hypothesis generator: given funnel data + behavioral patterns + statistical analysis, use Groq to generate 5 specific A/B hypotheses with: hypothesis statement, targeted metric, user segment, implementation effort (low/medium/high), estimated impact.",
+      "Build a hypothesis scoring model: weight hypotheses by statistical confidence of underlying pattern, potential impact, and implementation feasibility.",
+      "Generate an experiment brief for each top hypothesis: hypothesis, success metrics, minimum detectable effect, required sample size (using scipy stats).",
+      "Build Streamlit dashboard: funnel visualization, cohort heatmap, hypothesis list ranked by priority, experiment brief generator.",
+      "Add a 'similar test' finder: for each hypothesis, search a database of common CRO tests to find evidence the idea has worked elsewhere.",
+      "Export hypothesis backlog as a JIRA-compatible CSV."
+    ],
+    "achieved": "Learned product analytics, funnel analysis, statistical hypothesis testing, cohort analysis, and AI-assisted product decision making. This is the intersection of data science and product management.",
+    "progression": "Day 32 closes Phase 3. You've now built 12 agent projects across data analysis, travel, content, finance, real estate, social media, and product analytics. You can adapt agents to virtually any domain."
+  },
+
+  # PHASE 4
+  {
+    "day": 33, "phase": 4,
+    "title": "Production MCP Server for Internal Company Tools",
+    "problem": "Every company has internal tools — databases, ticketing systems, internal APIs, dashboards — but AI assistants can't access them. Building custom integrations for each tool is expensive and requires AI expertise. The MCP (Model Context Protocol) standard enables any Claude-powered workflow to access any tool, but most companies don't have production-grade MCP servers.",
+    "solution": "Build a production MCP server that exposes internal company tools (database queries, Jira ticket creation, Slack messaging, internal API calls) to any MCP-compatible AI client. Include OAuth2 authentication, rate limiting, and audit logging.",
+    "stack": ["Python", "MCP SDK (Python)", "FastAPI", "OAuth2 / JWT", "SQLAlchemy", "Jira API", "Slack API", "Docker", "logging + audit trail"],
+    "steps": [
+      "Understand MCP protocol: tools are JSON-RPC 2.0 methods with schemas. Install mcp Python SDK.",
+      "Set up the MCP server structure: define tools as Python functions decorated with @server.tool(). Each tool has: name, description, input schema (JSON Schema), async handler function.",
+      "Build the database query tool: accepts a natural language question, validates it against a whitelist of allowed query patterns, executes read-only SQL, returns formatted results.",
+      "Build the Jira tool: create_ticket (project, summary, description, priority), search_tickets (query string), update_status. Use Jira REST API.",
+      "Build the Slack tool: post_message (channel, message), get_channel_history (channel, limit), create_channel.",
+      "Implement OAuth2 authentication: MCP clients must authenticate before calling tools. Issue JWT tokens with scopes matching tool permissions.",
+      "Implement rate limiting: per-user, per-tool rate limits. Track usage in Redis.",
+      "Implement audit logging: every tool call logged with: user, tool, parameters (sanitized), timestamp, result status. Write to PostgreSQL for compliance.",
+      "Containerize with Docker. Write docker-compose with the MCP server, Redis, and PostgreSQL.",
+      "Write comprehensive documentation showing how to connect from Claude Desktop or any MCP client."
+    ],
+    "achieved": "Mastered the MCP protocol, production authentication patterns, rate limiting, audit logging, and containerization. Building MCP servers is one of the most in-demand skills in 2025 AI engineering.",
+    "progression": "Phase 4 begins — you shift from building AI applications to building AI infrastructure. MCP servers are infrastructure that other AI systems build on top of. This is senior AI engineering."
+  },
+  {
+    "day": 34, "phase": 4,
+    "title": "Production LLM API Gateway with Semantic Caching",
+    "problem": "Companies using LLMs at scale waste enormous amounts of money on redundant API calls. The same or semantically identical queries are sent thousands of times. Rate limiting is applied per-user but not per-application. There is no visibility into which prompts are being sent, what they cost, and where money is being wasted.",
+    "solution": "Build a production API gateway that sits in front of any LLM provider. It provides: semantic caching (similar queries return cached responses), per-user rate limiting, cost tracking per request, prompt observability, streaming support, and fallback to backup models.",
+    "stack": ["Python", "FastAPI", "Redis", "Groq API", "Anthropic API", "Sentence Transformers (cache embeddings)", "PostgreSQL", "Prometheus metrics", "streaming SSE"],
+    "steps": [
+      "Set up FastAPI application. Define the proxy endpoint: POST /v1/chat/completions that mimics the OpenAI API spec so clients need zero code changes.",
+      "Implement semantic caching: before sending to LLM, embed the user message with Sentence Transformers. Search Redis for semantically similar cached responses (cosine similarity > 0.95). If found, return cached response instantly.",
+      "Implement cache storage: when a new response comes back, embed the query and store in Redis with a TTL. Use Redis sorted sets for similarity search.",
+      "Implement per-user rate limiting: track tokens used per user per minute/hour/day in Redis. Return 429 with Retry-After header when limit exceeded.",
+      "Implement cost tracking: calculate token count per request (using tiktoken). Store cost per request in PostgreSQL with user_id, timestamp, model, prompt_tokens, completion_tokens, cost_usd.",
+      "Implement model fallback: if primary model (Groq) returns 503, automatically retry with backup model (Anthropic Claude Haiku). Transparent to the client.",
+      "Implement streaming: proxy the SSE stream from the LLM to the client. Cache streaming responses by buffering and storing after completion.",
+      "Add Prometheus metrics: requests_total, cache_hit_rate, latency_p95, cost_per_user. Create a Grafana dashboard.",
+      "Build an admin dashboard: real-time usage, top users by cost, cache hit rate trends, model latency comparison.",
+      "Write load tests using Locust. Show cache hit rate under realistic load."
+    ],
+    "achieved": "Built production infrastructure: semantic caching, rate limiting, cost tracking, streaming, model fallback, and observability. This is backend engineering at the senior level.",
+    "progression": "Day 34 is pure infrastructure. No AI features for end users — just the infrastructure that makes AI applications scalable and cost-effective. This systems thinking separates senior engineers from juniors."
+  },
+  {
+    "day": 35, "phase": 4,
+    "title": "Multi-Tenant SaaS AI Chatbot Platform",
+    "problem": "Every business wants an AI chatbot trained on their own content, but building one requires AI engineering expertise most companies don't have. Existing solutions are expensive, inflexible, or require vendor lock-in. There is no affordable, white-label platform where businesses can upload their documents and get a production-grade branded chatbot in minutes.",
+    "solution": "Build a multi-tenant SaaS platform. Business owners sign up, upload their documents, get a branded chatbot widget they embed on their website. Each tenant has isolated vector storage, custom branding, their own usage limits, and a self-service dashboard.",
+    "stack": ["Python", "FastAPI", "Pinecone (namespaces)", "Groq API", "Stripe (billing)", "Next.js", "PostgreSQL", "Redis", "JWT auth", "Docker"],
+    "steps": [
+      "Design the multi-tenancy architecture: each tenant gets a unique tenant_id and an isolated Pinecone namespace. Data from one tenant never leaks to another.",
+      "Build the authentication system: email + password login, JWT tokens with tenant_id embedded, refresh token rotation.",
+      "Build the tenant onboarding flow: create account → choose plan → set up chatbot (name, persona, color scheme) → upload documents → get embed code.",
+      "Build the document ingestion pipeline: per-tenant document processing. Store embeddings in tenant's Pinecone namespace. Track ingestion status.",
+      "Build the chatbot API: POST /chat/{tenant_id}/message — retrieve from tenant namespace, generate response with tenant's custom persona prompt.",
+      "Build the embeddable widget: a JavaScript snippet that injects a chat bubble on any website. The widget calls the chatbot API with the tenant's chatbot_id.",
+      "Build Stripe integration: three pricing tiers (Starter/Pro/Business) with different document limits, message quotas, and customization options. Handle subscription webhooks.",
+      "Build the tenant admin dashboard: upload documents, view analytics (questions asked, satisfaction ratings), customize chatbot appearance, manage billing.",
+      "Build usage metering: track messages per tenant per billing period. Enforce limits. Upsell when approaching limit.",
+      "Deploy with Docker on a VPS, Nginx reverse proxy, SSL with Let's Encrypt."
+    ],
+    "achieved": "Built a complete SaaS product with multi-tenancy, billing integration, embeddable widget, and usage metering. This is the most production-complete project in the entire roadmap.",
+    "progression": "Day 35 is your first complete SaaS product. Everything from authentication to billing to deployment. This single project demonstrates more real-world engineering breadth than most portfolios."
+  },
+  {
+    "day": 36, "phase": 4,
+    "title": "LLM Evaluation and Benchmarking Framework",
+    "problem": "Teams using LLMs in production have no systematic way to evaluate prompt quality or compare models. Prompts are changed ad-hoc without measuring impact. There is no standard framework to test: which model performs best for this use case? Is the new prompt better than the old one? How does model performance degrade on edge cases?",
+    "solution": "Build a comprehensive LLM evaluation framework. Define test suites with golden examples. Run prompts against multiple models. Score on custom metrics (accuracy, toxicity, latency, cost). Track scores over time and generate evaluation reports.",
+    "stack": ["Python", "LangSmith", "Groq API", "Anthropic API", "Ollama (local)", "Pandas", "Plotly", "FastAPI", "React", "SQLite"],
+    "steps": [
+      "Design the evaluation framework data model: Prompt (system + user template), Dataset (list of {input, expected_output}), EvalRun (prompt + dataset + model + results).",
+      "Build the dataset manager: create and version test datasets. Each example has: input variables, expected output, tags (edge_case, happy_path, adversarial).",
+      "Build evaluator functions: ExactMatchEvaluator, SemanticSimilarityEvaluator (embedding cosine sim), LLMJudgeEvaluator (use a second LLM to score quality), LatencyEvaluator, CostEvaluator.",
+      "Build the multi-model runner: for each test case, run the prompt against all configured models in parallel. Store all results.",
+      "Build LangSmith integration: log all eval runs to LangSmith for trace visualization. Link eval results to specific LLM call traces.",
+      "Build the comparison report: side-by-side model comparison table, metric radar charts, failure mode analysis (which examples fail for which models), cost-performance tradeoff curves.",
+      "Build regression detection: compare current eval run to previous. Alert if any metric drops >5%.",
+      "Build a prompt versioning system: every prompt change is versioned. Compare v1 vs v2 eval scores. Visualize improvement over versions.",
+      "Build CI/CD integration: run eval suite automatically before any prompt change goes to production.",
+      "Build React dashboard with evaluation run history, metric trends, model comparison charts."
+    ],
+    "achieved": "Learned LLM evaluation methodology, LangSmith integration, multi-model testing, and building the infrastructure that makes AI systems trustworthy and improvable over time.",
+    "progression": "Day 36 teaches evaluation — the discipline that makes AI production-ready. You can't improve what you don't measure. Evaluation frameworks are a mark of serious AI engineering practice."
+  },
+  {
+    "day": 37, "phase": 4,
+    "title": "Document Processing Pipeline with Human-in-the-Loop",
+    "problem": "Enterprise document processing (invoices, contracts, forms) requires high accuracy — errors cost real money. Fully automated AI processing has a 5-10% error rate that's unacceptable for financial documents. Fully manual processing is too slow and expensive. There is no system that automates high-confidence extractions and routes only uncertain ones to humans.",
+    "solution": "Build a document processing pipeline with confidence-based routing. High-confidence extractions (>90%) are auto-approved. Medium-confidence go to human review queue. Low-confidence trigger an escalation. Track accuracy over time and retrain on human corrections.",
+    "stack": ["Python", "LangGraph", "FastAPI", "WebSockets", "PostgreSQL", "PyMuPDF", "Pydantic", "React", "confidence scoring"],
+    "steps": [
+      "Define the document schema for invoice processing: vendor_name, invoice_number, invoice_date, due_date, line_items (list), subtotal, tax, total, bank_details.",
+      "Build the extraction pipeline using LangGraph: ReadDocument node → ExtractStructured node → CalculateConfidence node → Route node.",
+      "Confidence calculation: for each extracted field, use a second LLM call to ask 'How confident are you in this extraction? 0-100'. Combine field confidences into an overall document confidence.",
+      "Build the routing logic in LangGraph: confidence >90% → AutoApprove. 60-90% → HumanReview. <60% → Escalate.",
+      "Build the human review interface: React UI showing the document image (left) and extracted fields (right). Reviewers can click any field to correct it. Submit with one click.",
+      "Implement WebSocket updates: reviewers see new documents appear in their queue in real time.",
+      "Build the learning loop: save human corrections in PostgreSQL. Weekly, analyze correction patterns and update the extraction prompt with few-shot examples of common correction types.",
+      "Build the accuracy dashboard: extraction accuracy by field, auto-approval rate, human correction rate, time-to-review metrics.",
+      "Add batch processing: upload a ZIP of 100 invoices, process in parallel, get batch accuracy report.",
+      "Add audit trail: every document has a complete history of automated extraction → human corrections → final values."
+    ],
+    "achieved": "Mastered confidence scoring, human-in-the-loop architecture, WebSocket real-time UI, and building AI systems that improve from human feedback. This is how production AI is safely deployed in enterprise.",
+    "progression": "Day 37 introduces the critical concept of human-in-the-loop (HITL) — the architecture that makes AI safe enough for high-stakes enterprise workflows. This is what responsible AI deployment looks like."
+  },
+  {
+    "day": 38, "phase": 4,
+    "title": "AI Feature Flag System with Smart Rollout",
+    "problem": "Rolling out AI features to all users at once is risky — the feature might fail, be too expensive, or have unexpected behaviors for certain user segments. Manual feature flags require developer intervention. There is no system that automatically rolls out AI features based on user behavior, rolls back on quality degradation, and segments users by how they respond.",
+    "solution": "Build an intelligent feature flag system specifically for AI features. Features roll out gradually to user segments. The system monitors quality metrics and automatically pauses rollout if metrics degrade. Builds user cohorts based on AI engagement patterns.",
+    "stack": ["Python", "FastAPI", "PostgreSQL", "Redis", "LangChain", "Groq API", "React", "analytics pipeline", "statistical testing"],
+    "steps": [
+      "Design the feature flag data model: Feature (name, description, rollout_percentage, target_segments, quality_thresholds), UserCohort (criteria), FeatureEvent (user_id, feature, action, quality_score, timestamp).",
+      "Build the flag evaluation engine: for each user + feature combination, check: is user in rollout percentage? Does user match target segment? Return: enabled/disabled + variant.",
+      "Build user segmentation: define cohorts based on behavior — power_users (>20 sessions/month), new_users (<7 days old), enterprise_users (paid), at_risk_users (churn score >60%).",
+      "Build the quality monitoring pipeline: for each AI feature, track quality signals — thumbs up/down, completion rate, error rate, latency. Compute rolling 24h quality score.",
+      "Build automatic rollout control: if quality score drops below threshold, automatically reduce rollout percentage and alert the team. If score is good, increase percentage on schedule.",
+      "Build A/B test analysis: compare quality metrics between feature-on and feature-off cohorts. Statistical significance testing using scipy.",
+      "Build the admin dashboard: feature list with rollout status, quality trend charts, segment performance breakdown, rollout schedule.",
+      "Add gradual rollout automation: 5% → 10% → 25% → 50% → 100%, advancing only when quality metrics are stable.",
+      "Build webhook notifications: Slack alert when rollout pauses, when 100% rollout is reached, when quality degrades.",
+      "Write integration guide: how to add this feature flag check to any AI feature in 3 lines of code."
+    ],
+    "achieved": "Learned feature flag architecture, statistical A/B analysis, automatic rollout control, and production quality monitoring. This is platform engineering for AI products.",
+    "progression": "Day 38 is pure platform engineering — building systems that make AI features safe to release. You now think like a platform team, not just an application developer."
+  },
+  {
+    "day": 39, "phase": 4,
+    "title": "Prompt Versioning and A/B Testing System",
+    "problem": "Prompts are code, but they're rarely treated as such. Teams make prompt changes informally, without version control, without testing, and without measuring impact. A prompt change that degrades quality might not be noticed for weeks. There is no Git-like system for prompts with branching, testing, and deployment pipelines.",
+    "solution": "Build a prompt management system: version control for prompts, A/B testing framework to compare prompt variants, automated quality scoring, deployment pipelines (staging → production), and a full audit trail of what changed and why.",
+    "stack": ["Python", "FastAPI", "PostgreSQL", "Groq API", "Anthropic API", "React", "semantic versioning", "statistical testing", "Redis"],
+    "steps": [
+      "Design the prompt versioning schema: Prompt (name, description, system_template, user_template_variables), PromptVersion (semver, content, author, commit_message, created_at), PromptDeployment (version, environment, deployed_at, deployed_by).",
+      "Build the version control API: create/update prompts, commit versions with messages, checkout specific versions, diff between versions.",
+      "Build the diff engine: compare two prompt versions with colored diff highlighting (additions in green, removals in red, like GitHub diffs).",
+      "Build the A/B test engine: split users 50/50 between two prompt versions. Track per-version: quality scores, latency, cost, user ratings.",
+      "Build the evaluation harness: run both prompt versions against a test dataset and compare scores automatically.",
+      "Implement statistical significance testing: ensure A/B results are not random chance before declaring a winner (p < 0.05, minimum 200 samples per variant).",
+      "Build deployment pipeline: Prompt starts in draft → tested → staging (10% traffic) → production (100% traffic). Requires approval gate between stages.",
+      "Build rollback capability: one-click rollback to any previous version. Automatic rollback if quality drops >10% post-deployment.",
+      "Build React UI: prompt editor with syntax highlighting, version history timeline, A/B test status dashboard, deployment pipeline view.",
+      "Add Slack notifications: when an A/B test reaches significance, notify the team with the winner and metrics summary."
+    ],
+    "achieved": "Built a complete prompt engineering platform with versioning, A/B testing, deployment pipelines, and rollback. This is MLOps for prompts — critical infrastructure for any AI team.",
+    "progression": "Day 39 applies software engineering discipline (version control, CI/CD, rollback) to AI prompts. You now think about prompts as production code that needs the same rigor as application code."
+  },
+  {
+    "day": 40, "phase": 4,
+    "title": "Multi-Modal Product Catalog with Visual Search",
+    "problem": "Text search for products is limited — users often can't describe what they want, but would recognize it instantly if they saw it. E-commerce product tagging is manual and inconsistent. Product catalog quality is poor: missing attributes, wrong categories, inconsistent descriptions. There is no system that automatically understands product images and enables visual search.",
+    "solution": "Build a multi-modal product catalog system. Products are indexed by both image (CLIP embeddings) and text (sentence embeddings). Users can search by image, by text, or by a combination. The system auto-tags attributes from images and generates consistent descriptions.",
+    "stack": ["Python", "CLIP (OpenAI)", "Sentence Transformers", "Pinecone (multi-vector)", "Groq API (vision)", "FastAPI", "Next.js", "image processing (Pillow)"],
+    "steps": [
+      "Set up CLIP model locally using the clip Python library. Understand that CLIP produces compatible embeddings for both images and text (they exist in the same vector space).",
+      "Build the product ingestion pipeline: for each product, generate: CLIP embedding of the product image, Sentence Transformer embedding of the description, store both vectors in Pinecone with the same product_id.",
+      "Build the visual search endpoint: user uploads an image → generate CLIP embedding → search Pinecone for nearest neighbor images → return matching products.",
+      "Build the text-to-visual search: user types 'red dress with floral pattern' → generate CLIP text embedding → search the image embedding index (CLIP embeds text and images in the same space).",
+      "Build the hybrid search: combine visual similarity score and text similarity score with a configurable weight. 'Image search weighted 70%, text 30%'.",
+      "Build the auto-tagging pipeline: use Groq Vision (if available) or a separate vision model to analyze product images and extract: color, material, style, pattern, occasion. Store as structured attributes.",
+      "Build the description generator: given product image + basic product info, generate a consistent, detailed product description in a standard format.",
+      "Build the attribute inconsistency detector: find products where auto-tagged attributes conflict with manually written descriptions. Flag for review.",
+      "Build Next.js frontend with drag-and-drop image search, combined search bar, filter-by-attribute sidebar, and product detail view.",
+      "Add 'complete the look' feature: for a selected product, find visually complementary products using CLIP similarity."
+    ],
+    "achieved": "Mastered multi-modal AI, CLIP embeddings, visual search, and multi-vector indexing. Multi-modal AI is one of the fastest-growing areas and this project shows deep expertise.",
+    "progression": "Day 40 introduces multi-modal AI — combining vision and text understanding. This is cutting-edge in 2025. You understand that CLIP creates a unified embedding space for images and text, enabling cross-modal search."
+  },
+  {
+    "day": 41, "phase": 4,
+    "title": "Real-Time AI Meeting Coach with Live Transcription",
+    "problem": "People have no real-time feedback during meetings or presentations. You don't know you're talking too fast, too much, or using filler words until after the fact. Presentation coaches are expensive. There is no tool that listens to a live meeting and provides real-time coaching on talk speed, balance, filler words, and engagement.",
+    "solution": "Build a real-time meeting coach: captures microphone audio, continuously transcribes with Whisper, analyzes speaking patterns, and provides live coaching tips in a sidebar. Post-meeting, generates a full analysis report.",
+    "stack": ["Python", "Whisper (streaming)", "WebSockets", "FastAPI", "PyAudio (microphone capture)", "React", "Web Audio API", "Groq API", "real-time processing"],
+    "steps": [
+      "Build the audio capture system: use PyAudio to capture microphone input in 2-second chunks. Stream chunks to the backend via WebSocket.",
+      "Build the streaming transcription pipeline: process each 2-second audio chunk with Whisper. Stitch transcript with overlap to handle sentence boundaries that fall on chunk boundaries.",
+      "Build the real-time speech analytics engine: compute per-30-second window — words per minute (pace), filler word count (um, uh, like, you know), pause frequency, sentence complexity score.",
+      "Build the multi-speaker detection: if multiple microphones or a stereo source, attempt to identify distinct speakers and track talk-time balance per speaker.",
+      "Build the coaching engine: define thresholds — pace > 180 wpm is 'too fast', pause > 4 seconds is 'dead air', filler words > 3/minute is 'excessive'. Generate contextual coaching tips when thresholds are crossed.",
+      "Implement coaching tip rate limiting: don't overwhelm the user with tips. Maximum one tip every 60 seconds. Queue tips if multiple are triggered.",
+      "Build the React frontend: live transcription display (auto-scrolling), real-time metrics bar (pace gauge, filler word count, talk balance), coaching tips sidebar, recording controls.",
+      "Build the post-meeting analysis report: full transcript, key moments, speaking metrics over time, top 5 improvement areas, comparison to previous sessions.",
+      "Add meeting summary generation: at the end of a meeting, auto-generate notes with decisions and action items from the full transcript.",
+      "Optimize latency: target <3 second end-to-end from speech to transcript display."
+    ],
+    "achieved": "Mastered real-time audio processing, WebSocket streaming, low-latency AI pipelines, and building latency-sensitive AI applications. Real-time AI is a distinct engineering discipline.",
+    "progression": "Day 41 pushes AI engineering into real-time constraints. Every architectural decision is about minimizing latency. This is a completely different set of tradeoffs from batch-processing AI systems."
+  },
+  {
+    "day": 42, "phase": 4,
+    "title": "Financial Communications Compliance Monitor",
+    "problem": "Financial institutions must comply with regulations that prohibit certain communications: guaranteeing returns, making unauthorized investment recommendations, or sharing material non-public information. Manually monitoring thousands of daily Slack messages and emails is impossible. Violations can result in multi-million dollar fines.",
+    "solution": "Build a compliance monitoring system that scans all financial communications (Slack, email) in real time. It classifies messages by risk level, flags potential violations with specific regulatory citation, quarantines high-risk messages, and generates compliance audit reports.",
+    "stack": ["Python", "LangChain", "Groq API", "Slack API (Events)", "FastAPI", "PostgreSQL", "React", "compliance rule engine", "audit logging"],
+    "steps": [
+      "Build a compliance rule library: define specific regulatory rules with examples. FINRA Rule 2010 (Standards of Commercial Honor), SEC advertising rules, MiFID II communication standards.",
+      "Build the Slack Event subscription: subscribe to message events via Slack Events API. For each message, extract: sender, channel, timestamp, content, thread context.",
+      "Build the classification engine: for each message, run two checks — rule-based (regex for obvious violations: 'guaranteed return', 'risk-free') and LLM-based (semantic understanding of subtle violations).",
+      "Build the risk scoring model: combine rule violation count + LLM confidence score → overall risk score (0-100). Score > 70 = high risk, 40-70 = medium.",
+      "Build the action engine: high-risk messages → quarantine (post a bot reply warning the sender and deleting the message). Medium-risk → flag for compliance officer review. Low-risk → log only.",
+      "Build the compliance officer review interface: flagged messages with: original content, violation type, specific rule citation, recommendation.",
+      "Build the audit report generator: monthly compliance report with: total messages scanned, violation count by type, false positive rate, response time metrics.",
+      "Add false positive feedback loop: compliance officers can mark false positives. Use these to fine-tune the classification prompt.",
+      "Build Slack bot commands: /compliance-check [message text] — compliance officers can check any message. /compliance-report — generate instant report.",
+      "Ensure all processing is logged in an immutable audit trail for regulatory review."
+    ],
+    "achieved": "Built a regulatory compliance AI system with rule-based + LLM detection, message quarantine, audit trails, and compliance reporting. RegTech AI is a high-value specialization.",
+    "progression": "Day 42 closes Phase 4 with a high-stakes enterprise application. You've built 10 production-grade infrastructure and platform projects. Phase 5 begins the startup-grade systems."
+  },
+
+  # PHASE 5
+  {
+    "day": 43, "phase": 5,
+    "title": "AI-Native CRM with Relationship Intelligence",
+    "problem": "Traditional CRMs are data entry burdens — salespeople spend 30% of their time logging activities. CRM data is always stale. Relationship intelligence (who said what, what was promised, what's the emotional temperature of a relationship) is completely absent. Salespeople miss follow-ups, forget context, and lose deals due to poor relationship management.",
+    "solution": "Build an AI-native CRM that auto-populates from emails and calendar, generates relationship health scores, surfaces who to follow up with today, predicts deal close probability, and writes draft next-step emails with full context.",
+    "stack": ["Python", "LangGraph", "Gmail API", "Google Calendar API", "Groq API", "PostgreSQL", "pgvector", "Next.js", "Recharts"],
+    "steps": [
+      "Build Gmail integration: use Gmail API to sync all sent/received emails per contact. Parse email threads to extract: key commitments, questions, decisions, follow-up dates.",
+      "Build calendar integration: sync meetings, extract attendees, duration, and link to contacts.",
+      "Build the contact timeline builder: for each contact, construct a chronological timeline of all touchpoints (emails, meetings, calls). Store in PostgreSQL with embeddings for semantic search.",
+      "Build relationship health scoring: compute per-contact — days since last contact, communication frequency trend, sentiment trend (are emails getting shorter/colder?), response rate, commitments fulfilled vs missed.",
+      "Build the deal intelligence layer: for sales opportunities, track: stage, probability, key stakeholders, risks, last meaningful engagement. Use LangGraph to model the deal progression workflow.",
+      "Build the follow-up intelligence engine: every morning, identify who needs follow-up based on: overdue commitments, long time since contact, upcoming decision dates.",
+      "Build the context-aware email generator: given a contact + relationship history, draft the next email. The draft references specific past conversations and proposes a clear next step.",
+      "Build deal close probability: train a simple model on historical deal data. Features: time in stage, communication frequency, stakeholder count, last activity.",
+      "Build Next.js dashboard: contact list with health scores, deal pipeline board, daily follow-up queue, relationship timeline view per contact.",
+      "Add natural language search: 'Show me all contacts I haven't followed up with this week who are in the proposal stage'."
+    ],
+    "achieved": "Built a complete AI-native SaaS product combining Gmail/Calendar API integration, relationship intelligence, LangGraph workflow, and predictive scoring. This is a fundable startup idea.",
+    "progression": "Phase 5 begins. These are startup-grade systems. Day 43 integrates multiple external APIs with LangGraph orchestration and predictive ML — the full stack of an AI-native SaaS product."
+  },
+  {
+    "day": 44, "phase": 5,
+    "title": "Autonomous SDE Agent — GitHub Issue to Pull Request",
+    "problem": "Software development is the most expensive knowledge work. Implementing well-defined features still requires hours of writing boilerplate, tests, and documentation. Junior developers spend enormous time on mechanical coding tasks. There is no system that can take a clear specification, write production-quality code, test it, and open a real pull request.",
+    "solution": "Build an autonomous software development agent. Give it a GitHub issue. It reads the codebase, plans the implementation, writes the code with tests, verifies it passes all tests in a Docker sandbox, and opens a PR with a detailed description. A mini Devin.",
+    "stack": ["Python", "LangGraph", "Groq API", "GitHub API (PyGitHub)", "Docker (sandboxed execution)", "AST analysis", "pytest", "tree-sitter"],
+    "steps": [
+      "Build the issue reader: fetch GitHub issue — extract title, description, labels, linked PRs, comments. Use LLM to produce a structured implementation plan: files to modify, new files to create, test cases to write.",
+      "Build the codebase explorer: clone the repo, build a code map using AST analysis — function names, class hierarchy, import graph. This is the agent's 'understanding' of the codebase.",
+      "Build the implementation planner LangGraph node: given issue + code map, generate a step-by-step plan: which functions to modify, what new functions to add, which tests to write.",
+      "Build the code writer node: for each planned change, generate the actual code. Use the existing codebase style as context (show the LLM examples from the existing code).",
+      "Build the Docker sandbox: create a Docker container with the repo, apply the code changes inside it, run the full test suite.",
+      "Build the test result analyzer node: if tests pass → proceed to PR. If tests fail → analyze failures, identify root cause, loop back to code writer with error context.",
+      "Implement the iterative fix loop: max 5 attempts. Each attempt, the agent sees the test failure and tries a different approach.",
+      "Build the PR creator: generate a detailed PR description — what changed, why, how it was tested, how to verify. Create the PR via GitHub API.",
+      "Add code review self-check: before opening the PR, the agent reviews its own code for obvious issues.",
+      "Test on 5 real GitHub issues from open-source projects to validate the system."
+    ],
+    "achieved": "Built the most sophisticated project in the entire roadmap. A fully autonomous coding agent that writes, tests, and ships code. This is one of the most impressive demo-able projects for top-tier interviews.",
+    "progression": "Day 44 represents the apex of agentic AI. The agent takes a high-level spec, plans, codes, tests, and ships — with no human in the loop. This is where AI engineering meets the frontier of the field."
+  },
+  {
+    "day": 45, "phase": 5,
+    "title": "AI-Powered Codebase Migration Tool",
+    "problem": "Legacy codebase migrations are among the most expensive engineering projects. Migrating Python 2 to Python 3, React class components to hooks, or AngularJS to React requires hundreds of hours of mechanical, error-prone refactoring. Automated tools (2to3, etc.) handle syntax but miss semantic patterns and application-specific logic.",
+    "solution": "Build an AI migration tool that understands not just syntax but semantics. It analyzes the source codebase, identifies all migration patterns needed, transforms each file intelligently, runs tests after each transformation, and produces a migration report showing what changed and why.",
+    "stack": ["Python", "LangGraph", "Groq API", "AST parsing (ast module, tree-sitter)", "pytest", "GitHub API", "difflib", "Docker"],
+    "steps": [
+      "Define migration profiles: Python 2→3 (print statements, unicode, division), React class→hooks (setState, lifecycle methods, refs), Flask→FastAPI (route decorators, request/response), Django 3→4 (deprecated APIs).",
+      "Build the codebase scanner: for each file, AST-parse and identify which migration patterns apply. Output a migration plan: file → list of transformations needed.",
+      "Build the transformation engine: for each transformation type, have a specialized LangGraph node that applies it. Nodes: PrintStatementConverter, AsyncLifecycleConverter, TypeAnnotationAdder, etc.",
+      "Implement the incremental migration strategy: transform one file at a time, run tests after each file, commit if tests pass, roll back if they fail.",
+      "Build the semantic understanding layer: for complex transformations (e.g., class component with complex state to hooks), use LLM to understand the intent of the code and produce equivalent hooks code.",
+      "Add equivalence verification: after transformation, run both original and transformed code against the same inputs and verify outputs match.",
+      "Build the migration report: for each transformed file — what patterns were found, what changes were made, before/after diff, test result.",
+      "Handle edge cases: manually flagged files that need human review, transformation conflicts, circular dependencies.",
+      "Add dry-run mode: shows all planned changes without applying them.",
+      "Build a web UI showing the migration progress, file-by-file status, test results, and the final report."
+    ],
+    "achieved": "Built an enterprise-grade migration tool combining AST analysis, semantic code understanding, LangGraph orchestration, and test-driven transformation. This solves a real $1M+ problem for large companies.",
+    "progression": "Day 45 shows how AI can handle one of software engineering's most expensive and feared tasks. Deep AST analysis + LLM semantic understanding is a combination that creates enterprise-grade tools."
+  },
+  {
+    "day": 46, "phase": 5,
+    "title": "Adaptive Personalized Learning Path Engine",
+    "problem": "Online education has a 90%+ dropout rate because courses are one-size-fits-all. Learners at different levels waste time on content they already know or get lost in content that's too advanced. There is no affordable system that assesses your exact knowledge level, creates a custom curriculum, and adapts in real-time based on your performance.",
+    "solution": "Build an adaptive learning engine: initial assessment via adaptive quizzing, personalized curriculum generation, bite-sized content delivery, spaced repetition scheduling, mastery tracking per concept, and a dynamic learning path that updates based on performance.",
+    "stack": ["Python", "LangGraph", "Groq API", "PostgreSQL", "spaced repetition algorithm (SM-2)", "Next.js", "Recharts", "Redis (session state)"],
+    "steps": [
+      "Design the knowledge graph: model a learning domain (e.g., Python programming) as a directed graph of concepts. Edges represent prerequisite relationships.",
+      "Build the adaptive assessment engine: start with medium-difficulty questions. If correct → harder next question. If wrong → easier. After 10 questions, estimate mastery per concept area.",
+      "Implement Item Response Theory (IRT) simplified: each question has a difficulty parameter. Estimate learner ability based on which questions they answer correctly.",
+      "Build the curriculum generator: given assessed knowledge gaps + learning goals + time available, use LLM to create a custom learning path. Order concepts by prerequisite dependencies.",
+      "Build the content generator: for each concept in the curriculum, generate: explanation (with analogies at the right level), 3 examples, 2 practice exercises.",
+      "Implement SM-2 spaced repetition algorithm: schedule review sessions for each learned concept. Concepts answered correctly get longer intervals; wrong answers reset to short intervals.",
+      "Build the LangGraph session manager: state tracks — current concept, questions asked, mastery scores, next review dates. Persists across sessions.",
+      "Build progress visualization: knowledge map showing mastered/learning/not-started concepts, daily streak tracker, estimated time to goal.",
+      "Add a Socratic tutor mode: instead of just answering questions, the AI asks guiding questions to help the learner discover the answer themselves.",
+      "Build parent/teacher dashboard: for each learner, view progress, weak areas, recommended next steps."
+    ],
+    "achieved": "Built a sophisticated EdTech product with adaptive assessment, spaced repetition, knowledge graph curriculum design, and personalized content generation. EdTech AI is a massive market.",
+    "progression": "Day 46 shows AI engineering applied to education — combining graph algorithms, statistical models (IRT), spaced repetition, and LLM content generation into a coherent learning product."
+  },
+  {
+    "day": 47, "phase": 5,
+    "title": "AI Ops Incident Response and Diagnosis Assistant",
+    "problem": "Production incidents are stressful and expensive. Engineers spend the first 30-60 minutes of an incident just gathering information: which services are affected, what changed recently, what do the logs say, what do the metrics show. Mean time to resolution (MTTR) is dominated by this information gathering phase, not the actual fix.",
+    "solution": "Build an AI ops assistant that integrates with your monitoring stack. When an alert fires, it automatically gathers all relevant context, diagnoses the most likely root cause, suggests remediation steps, and updates the incident Slack channel — reducing MTTR by 50%.",
+    "stack": ["Python", "LangGraph", "Datadog/Grafana API", "Groq API", "tool calling", "Slack API", "PagerDuty API", "PostgreSQL (runbooks)", "FastAPI"],
+    "steps": [
+      "Build monitoring integrations: Datadog API client (fetch metrics, logs, traces for a service and time window), Grafana API client (query dashboards and panel data).",
+      "Build the deployment tracker: integrate with your CI/CD (GitHub Actions or GitLab) to know what was deployed in the last 24 hours across all services.",
+      "Build the runbook RAG: ingest all operational runbooks as a vector-indexed knowledge base. When an incident occurs, retrieve relevant runbook sections.",
+      "Build the LangGraph incident response graph: Alert received → Gather context (metrics, logs, recent deploys) → Analyze root cause → Retrieve runbook → Generate diagnosis → Post to Slack → Track resolution.",
+      "Build the root cause analyzer: given metrics + logs + recent deploys, identify most likely root cause. Common patterns: deployment regression, database connection exhaustion, memory leak, external dependency failure.",
+      "Build the remediation generator: given root cause, suggest specific remediation steps with commands. 'Run: kubectl rollout undo deployment/api-service'.",
+      "Build the Slack integration: auto-post diagnosis and remediation steps to the incident channel. Update the post as new information arrives.",
+      "Add incident post-mortem generator: after resolution, auto-generate a post-mortem template filled with the incident timeline, root cause, and remediation steps.",
+      "Add learning loop: after each incident, record root cause and resolution. Build a knowledge base of past incidents for future diagnosis.",
+      "Add PagerDuty integration: acknowledge alerts and update incident status programmatically."
+    ],
+    "achieved": "Built a production DevOps AI tool that integrates with the real monitoring stack. This shows deep infrastructure knowledge combined with AI engineering — a very rare and valuable combination.",
+    "progression": "Day 47 is pure SRE + AI. You build tools that keep production systems running. Engineering managers at top tech companies specifically look for engineers who understand both AI and production systems."
+  },
+  {
+    "day": 48, "phase": 5,
+    "title": "Cross-Platform AI Inbox and Task Manager",
+    "problem": "Knowledge workers manage 5+ communication channels daily: Gmail, Slack, Linear, Jira, Calendar. Switching between apps is a constant context-switch tax. Important messages get buried. Urgent items are not prioritized correctly. There is no unified intelligent layer that understands your actual priorities and helps you manage attention, not just messages.",
+    "solution": "Build a unified AI inbox that aggregates Gmail, Slack, Linear, and Calendar. An AI layer triages everything by real urgency, drafts responses to routine messages, snoozes non-urgent items, and gives you a single prioritized action list for the day.",
+    "stack": ["Python", "LangGraph", "Gmail API", "Slack API", "Linear API", "Google Calendar API", "OAuth2", "Groq API", "Next.js", "PostgreSQL"],
+    "steps": [
+      "Build OAuth2 integrations for all four platforms: Gmail (gmail.readonly + gmail.send scopes), Slack (channels:read + chat:write), Linear (GraphQL API), Calendar (calendar.readonly).",
+      "Build the unified message normalizer: convert all messages into a standard InboxItem schema — {source, sender, subject, content, timestamp, thread_id, action_required (bool)}.",
+      "Build the AI triage engine: for each item, classify — Urgent Response Required (SLA breach), Action Required (no deadline), FYI Only, Automated (no action), Spam. Use LLM classification.",
+      "Build the priority scorer: combine urgency classification, sender relationship score, topic relevance to current projects, deadline proximity.",
+      "Build the response drafter: for Action Required items, generate a draft response with full context. User can approve in one click.",
+      "Build the snooze engine: FYI items get snoozed until relevant (e.g., a Linear issue update is surfaced when you're working on that project).",
+      "Build the daily digest: at 8 AM, generate 'Your day at a glance' — top 5 action items with context, today's meetings, approaching deadlines.",
+      "Build LangGraph orchestration: item arrives → classify → score → route to action queue or snooze → surface at right time.",
+      "Build Next.js unified inbox UI: source icons, priority indicators, one-click approve drafts, snooze controls, thread view.",
+      "Add learning: track which drafts users approve without editing (good signal) vs heavily edit (bad signal). Improve drafting quality."
+    ],
+    "achieved": "Built a cross-platform AI productivity tool with multi-OAuth integration, intelligent triage, automated drafting, and attention management. This is a real, shippable product.",
+    "progression": "Day 48 shows that AI engineering is ultimately about understanding human workflows and improving them. Multi-platform integration + intelligent triage is a billion-dollar problem space."
+  },
+  {
+    "day": 49, "phase": 5,
+    "title": "AI Video Editor — Edit by Transcript",
+    "problem": "Video editing requires expensive software, hours of timeline work, and technical expertise. Non-technical content creators can't edit their own videos. Podcasters, course creators, and vloggers spend 3-5 hours editing every hour of footage. Removing filler words, awkward pauses, and rambling sections requires scrubbing through the entire video.",
+    "solution": "Build a transcript-based video editor. Upload a video → get an editable transcript → delete words/sentences you don't want → the video is re-cut automatically. Like Descript but built by you.",
+    "stack": ["Python", "Whisper", "ffmpeg", "LangChain", "FastAPI", "React", "word-level timestamp alignment", "audio processing (pydub)"],
+    "steps": [
+      "Build video upload and processing: accept MP4, MOV, AVI. Extract audio track with ffmpeg. Normalize audio.",
+      "Run Whisper with word-level timestamps enabled (--word_timestamps True in CLI). Get precise start/end time for every word.",
+      "Build the transcript editor backend: represent the transcript as a list of Word objects: {word, start_time, end_time, deleted (bool)}.",
+      "Build transcript diff endpoint: when user edits transcript, compute which words were deleted. Map deleted words to video time ranges.",
+      "Build the video re-cutter: given a list of (start_time, end_time) pairs to keep, use ffmpeg to concatenate those segments. Handle audio cross-fades at cut points for smooth transitions.",
+      "Build the React transcript editor: word-by-word clickable transcript. Selected words highlight. Delete key removes them. Undo/redo history.",
+      "Build real-time preview: show which segments will be in the final cut. Play the edited version before exporting.",
+      "Add AI auto-edit features: 'Remove all filler words' (ums, uhs, you knows), 'Remove long pauses (>1.5 seconds)', 'Tighten pacing (remove all pauses > 0.3s)'.",
+      "Add highlight reel generator: identify the top 5 most engaging 30-second segments based on speech energy and content density.",
+      "Add chapter export: auto-generate YouTube chapters from the edited transcript."
+    ],
+    "achieved": "Built a complex media processing application combining Whisper word-level timestamps with ffmpeg video editing. This is a real, usable product that solves a painful problem for content creators.",
+    "progression": "Day 49 is the most complex media processing project. Combining word-level timestamps with precise video cutting requires deep understanding of audio/video processing — a specialized and valuable skill."
+  },
+  {
+    "day": 50, "phase": 5,
+    "title": "Full-Stack AI Platform Boilerplate (Capstone Project)",
+    "problem": "Every new AI project starts from scratch — setting up auth, billing, RAG pipeline, streaming chat, agent orchestration, evaluation, and CI/CD takes 2-3 weeks before you can build the actual product. Teams duplicate infrastructure code across projects. There is no production-ready boilerplate that includes all the standard AI application infrastructure.",
+    "solution": "Build the definitive production-ready AI application boilerplate. It includes everything you've learned in 50 days: auth + billing, streaming chat with RAG, LangGraph agents, LLM gateway with caching, eval framework, prompt versioning, feature flags, deployment pipeline, and comprehensive documentation.",
+    "stack": ["Next.js 14 (App Router)", "FastAPI", "LangGraph", "Groq API", "Pinecone", "PostgreSQL", "Redis", "Stripe", "Docker + Docker Compose", "GitHub Actions CI/CD", "Vercel + Railway deployment"],
+    "steps": [
+      "Architecture design: define the system architecture. Frontend (Next.js) ↔ Backend API (FastAPI) ↔ LangGraph Agents ↔ Vector DB (Pinecone) ↔ PostgreSQL ↔ Redis ↔ LLM Gateway.",
+      "Build the auth system: NextAuth.js frontend + FastAPI JWT backend. Email + Google OAuth. Role-based access control (admin, user, viewer).",
+      "Build the Stripe billing integration: subscription plans, usage metering, webhook handling, customer portal. Three tiers with different quotas.",
+      "Build the RAG pipeline module: document ingestion, chunking, embedding, storage, retrieval. Configurable per-tenant with Pinecone namespaces.",
+      "Build the streaming chat interface: WebSocket-based streaming from LangGraph agent through FastAPI to Next.js. Full conversation history with PostgreSQL persistence.",
+      "Build the LangGraph agent foundation: a base agent with tool-calling, conversation memory, and custom tool integration. Easy to extend for any use case.",
+      "Integrate the LLM Gateway (from Day 34): semantic caching, rate limiting, cost tracking, multi-model fallback. All API calls route through the gateway.",
+      "Integrate the Eval Framework (from Day 36): test suites, automated evaluation on deploy, regression detection.",
+      "Integrate Prompt Versioning (from Day 39): all prompts versioned, staged deployment, A/B testing infrastructure.",
+      "Build the deployment pipeline: Docker Compose for local dev, GitHub Actions CI (test + lint + eval), automated deployment to Vercel (frontend) + Railway (backend). Full documentation in a beautiful README.",
+      "Write comprehensive documentation: architecture guide, quick start (up in 15 minutes), customization guide, API reference, deployment guide. Make this the README you wish every project had."
+    ],
+    "achieved": "Built a complete, production-ready AI application platform that synthesizes everything learned across 50 days. This is the foundation you take to every future project, startup, or job.",
+    "progression": "Day 50 is the culmination of your 50-day journey. You've gone from a single CLI tool to a full production AI platform. Every concept from Day 1 through Day 49 appears somewhere in this capstone. This is your portfolio centerpiece."
+  },
+]
+
+# ── page template ────────────────────────────────────────────────────────────
+def make_page_template(canvas, doc):
+    # White background
+    canvas.saveState()
+    canvas.setFillColor(WHITE)
+    canvas.rect(0, 0, W, H, fill=1, stroke=0)
+    # Bottom footer line
+    canvas.setStrokeColor(DIVIDER)
+    canvas.setLineWidth(0.5)
+    canvas.line(20*mm, 14*mm, W - 20*mm, 14*mm)
+    # Footer text
+    canvas.setFont('Helvetica', 8)
+    canvas.setFillColor(MID_GRAY)
+    canvas.drawString(20*mm, 10*mm, "50 Days to AI Engineer — Production-Grade Project Roadmap")
+    canvas.drawRightString(W - 20*mm, 10*mm, f"Page {doc.page}")
+    canvas.restoreState()
+
+# ── helper to build a colored section band ──────────────────────────────────
+def phase_banner(text, phase_num):
+    col = PHASE_COLORS[phase_num]
+    data = [[Paragraph(text, section_header)]]
+    t = Table(data, colWidths=[W - 40*mm])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), col),
+        ('TOPPADDING', (0,0), (-1,-1), 10),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+        ('LEFTPADDING', (0,0), (-1,-1), 14),
+        ('RIGHTPADDING', (0,0), (-1,-1), 14),
+        ('ROWBACKGROUNDS', (0,0), (-1,-1), [col]),
+    ]))
+    return t
+
+def colored_label(text, bg_color):
+    data = [[Paragraph(text, label_style)]]
+    t = Table(data, colWidths=[None])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), bg_color),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('LEFTPADDING', (0,0), (-1,-1), 8),
+        ('RIGHTPADDING', (0,0), (-1,-1), 8),
+        ('ROWBACKGROUNDS', (0,0), (-1,-1), [bg_color]),
+    ]))
+    return t
+
+def section_box(title, content_paras, left_color, phase):
+    light = PHASE_LIGHT[phase]
+    title_para = Paragraph(title.upper(), ParagraphStyle('sl', fontName='Helvetica-Bold', fontSize=8, textColor=left_color, leading=11))
+    content_cell = [title_para, Spacer(1, 4)] + content_paras
+    data = [[content_cell]]
+    t = Table(data, colWidths=[W - 40*mm])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), light),
+        ('TOPPADDING', (0,0), (-1,-1), 10),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+        ('LEFTPADDING', (0,0), (-1,-1), 12),
+        ('RIGHTPADDING', (0,0), (-1,-1), 12),
+        ('LINEAFTER', (0,0), (0,-1), 3, left_color),
+    ]))
+    return t
+
+# ── build story ──────────────────────────────────────────────────────────────
+story = []
+
+# ── COVER PAGE ───────────────────────────────────────────────────────────────
+# Dark cover background
+cover_bg = Table([['']], colWidths=[W], rowHeights=[H])
+cover_bg.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), ACCENT)]))
+story.append(cover_bg)
+
+# We'll do cover differently — use canvas via a custom flowable
+from reportlab.platypus import Flowable as FL
+
+class CoverPage(FL):
+    def __init__(self):
+        FL.__init__(self)
+        self.width = W
+        self.height = H
+    def draw(self):
+        c = self.canv
+        # Background
+        c.setFillColor(ACCENT)
+        c.rect(-20*mm, -20*mm, W+40*mm, H+40*mm, fill=1, stroke=0)
+        # Accent bar
+        c.setFillColor(colors.HexColor("#6C63FF"))
+        c.rect(-20*mm, H*0.55, W+40*mm, 3, fill=1, stroke=0)
+        # Title
+        c.setFont('Helvetica-Bold', 42)
+        c.setFillColor(WHITE)
+        c.drawString(20*mm, H*0.72, "50 Days to")
+        c.drawString(20*mm, H*0.72 - 52, "AI Engineer")
+        # Subtitle
+        c.setFont('Helvetica', 16)
+        c.setFillColor(colors.HexColor("#AAAAFF"))
+        c.drawString(20*mm, H*0.72 - 96, "Production-Grade Project Roadmap")
+        c.drawString(20*mm, H*0.72 - 116, "From CLI Tools to Autonomous AI Agents")
+        # Stats row
+        stats = [
+            ("50", "Projects"),
+            ("5", "Phases"),
+            ("25LPA+", "Target"),
+            ("All", "Deployed"),
+        ]
+        x = 20*mm
+        for val, lbl in stats:
+            c.setFont('Helvetica-Bold', 22)
+            c.setFillColor(colors.HexColor("#6C63FF"))
+            c.drawString(x, H*0.35, val)
+            c.setFont('Helvetica', 11)
+            c.setFillColor(colors.HexColor("#AAAAFF"))
+            c.drawString(x, H*0.35 - 18, lbl)
+            x += 45*mm
+        # Bottom note
+        c.setFont('Helvetica', 10)
+        c.setFillColor(colors.HexColor("#888888"))
+        c.drawString(20*mm, 25*mm, "Each project ships to production · Startup-grade architecture · Resume-worthy portfolio")
+
+story.insert(0, CoverPage())
+story.append(PageBreak())
+
+# ── TABLE OF CONTENTS ────────────────────────────────────────────────────────
+toc_bg_data = [[Paragraph("Table of Contents", ParagraphStyle('toch', fontName='Helvetica-Bold', fontSize=20, textColor=WHITE, leading=26))]]
+toc_header_table = Table(toc_bg_data, colWidths=[W - 40*mm])
+toc_header_table.setStyle(TableStyle([
+    ('BACKGROUND', (0,0), (-1,-1), ACCENT),
+    ('TOPPADDING', (0,0), (-1,-1), 14),
+    ('BOTTOMPADDING', (0,0), (-1,-1), 14),
+    ('LEFTPADDING', (0,0), (-1,-1), 14),
+]))
+story.append(toc_header_table)
+story.append(Spacer(1, 12))
+
+phase_names = {
+    1: "Phase 1 — Core Foundations (Days 1–10)",
+    2: "Phase 2 — RAG & Pipelines (Days 11–20)",
+    3: "Phase 3 — Agents & LangGraph (Days 21–32)",
+    4: "Phase 4 — Production Systems (Days 33–42)",
+    5: "Phase 5 — Startup-Grade (Days 43–50)",
+}
+
+for phase_num in range(1, 6):
+    story.append(Paragraph(phase_names[phase_num], ParagraphStyle('tp', fontName='Helvetica-Bold', fontSize=11, textColor=PHASE_COLORS[phase_num], leading=16, spaceBefore=10, spaceAfter=3)))
+    phase_projects = [p for p in projects if p['phase'] == phase_num]
+    toc_data = []
+    for p in phase_projects:
+        toc_data.append([
+            Paragraph(f"Day {p['day']}", ParagraphStyle('td', fontName='Helvetica-Bold', fontSize=9, textColor=MID_GRAY, leading=13)),
+            Paragraph(p['title'], ParagraphStyle('tt', fontName='Helvetica', fontSize=9, textColor=DARK_GRAY, leading=13)),
+        ])
+    toc_table = Table(toc_data, colWidths=[18*mm, W - 58*mm])
+    toc_table.setStyle(TableStyle([
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('LEFTPADDING', (0,0), (-1,-1), 4),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+    ]))
+    story.append(toc_table)
+
+story.append(PageBreak())
+
+# ── PROJECT PAGES ────────────────────────────────────────────────────────────
+current_phase = None
+
+for p in projects:
+    phase = p['phase']
+    col = PHASE_COLORS[phase]
+
+    # Phase header page
+    if phase != current_phase:
+        current_phase = phase
+        story.append(phase_banner(phase_names[phase], phase))
+        story.append(Spacer(1, 16))
+
+    elements = []
+
+    # Day number + title header
+    day_row = Table([
+        [Paragraph(f"DAY {p['day']}", ParagraphStyle('dn', fontName='Helvetica-Bold', fontSize=10, textColor=col, leading=13)),
+         Paragraph(p['title'], ParagraphStyle('pt', fontName='Helvetica-Bold', fontSize=15, textColor=BLACK, leading=20))]
+    ], colWidths=[18*mm, W - 58*mm])
+    day_row.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('LINEBELOW', (0,0), (-1,-1), 0.5, DIVIDER),
+    ]))
+    elements.append(day_row)
+    elements.append(Spacer(1, 8))
+
+    # Tech stack row
+    stack_items = "  ·  ".join(p['stack'])
+    stack_para = Paragraph(f"<b>Tech Stack & Libraries:</b>  {stack_items}", ParagraphStyle('stk', fontName='Helvetica', fontSize=9, textColor=DARK_GRAY, leading=14, backColor=TAG_BG, borderPad=6))
+    stack_table = Table([[stack_para]], colWidths=[W - 40*mm])
+    stack_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), TAG_BG),
+        ('TOPPADDING', (0,0), (-1,-1), 7),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 7),
+        ('LEFTPADDING', (0,0), (-1,-1), 10),
+        ('RIGHTPADDING', (0,0), (-1,-1), 10),
+        ('LINEABOVE', (0,0), (-1,-1), 0.5, TAG_BORDER),
+        ('LINEBELOW', (0,0), (-1,-1), 0.5, TAG_BORDER),
+    ]))
+    elements.append(stack_table)
+    elements.append(Spacer(1, 10))
+
+    # Problem statement
+    prob_label = Paragraph("PROBLEM STATEMENT", ParagraphStyle('lbl', fontName='Helvetica-Bold', fontSize=8, textColor=col, leading=11, spaceAfter=4))
+    prob_body = Paragraph(p['problem'], body_style)
+    prob_box = Table([[prob_label], [prob_body]], colWidths=[W - 40*mm])
+    prob_box.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), LIGHT_BG),
+        ('TOPPADDING', (0,0), (-1,-1), 8),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('LEFTPADDING', (0,0), (-1,-1), 12),
+        ('RIGHTPADDING', (0,0), (-1,-1), 12),
+        ('LINEAFTER', (0,0), (-1,-1), 3, col),
+    ]))
+    elements.append(prob_box)
+    elements.append(Spacer(1, 8))
+
+    # Solution
+    sol_label = Paragraph("SOLUTION APPROACH", ParagraphStyle('lbl2', fontName='Helvetica-Bold', fontSize=8, textColor=colors.HexColor("#1B5E20"), leading=11, spaceAfter=4))
+    sol_body = Paragraph(p['solution'], body_style)
+    sol_box = Table([[sol_label], [sol_body]], colWidths=[W - 40*mm])
+    sol_box.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#F1F8E9")),
+        ('TOPPADDING', (0,0), (-1,-1), 8),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('LEFTPADDING', (0,0), (-1,-1), 12),
+        ('RIGHTPADDING', (0,0), (-1,-1), 12),
+        ('LINEAFTER', (0,0), (-1,-1), 3, colors.HexColor("#2E7D32")),
+    ]))
+    elements.append(sol_box)
+    elements.append(Spacer(1, 10))
+
+    # Implementation steps
+    impl_label = Paragraph("STEP-BY-STEP IMPLEMENTATION", ParagraphStyle('lbl3', fontName='Helvetica-Bold', fontSize=8, textColor=colors.HexColor("#1A237E"), leading=11, spaceAfter=6))
+    step_items = []
+    for i, step in enumerate(p['steps'], 1):
+        step_items.append(Paragraph(f"<b>Step {i}.</b> {step}", step_style))
+    impl_box_data = [[impl_label]] + [[s] for s in step_items]
+    impl_box = Table(impl_box_data, colWidths=[W - 40*mm])
+    impl_box.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#E8EAF6")),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('LEFTPADDING', (0,0), (-1,-1), 12),
+        ('RIGHTPADDING', (0,0), (-1,-1), 12),
+        ('TOPPADDING', (0,0), (0,0), 8),
+        ('LINEAFTER', (0,0), (-1,-1), 3, colors.HexColor("#283593")),
+    ]))
+    elements.append(impl_box)
+    elements.append(Spacer(1, 8))
+
+    # What you achieved
+    ach_label = Paragraph("WHAT YOU ACHIEVED TODAY", ParagraphStyle('lbl4', fontName='Helvetica-Bold', fontSize=8, textColor=colors.HexColor("#4A148C"), leading=11, spaceAfter=4))
+    ach_body = Paragraph(p['achieved'], achievement_style)
+    ach_box = Table([[ach_label], [ach_body]], colWidths=[W - 40*mm])
+    ach_box.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#F3E5F5")),
+        ('TOPPADDING', (0,0), (-1,-1), 8),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('LEFTPADDING', (0,0), (-1,-1), 12),
+        ('RIGHTPADDING', (0,0), (-1,-1), 12),
+        ('LINEAFTER', (0,0), (-1,-1), 3, colors.HexColor("#7B1FA2")),
+    ]))
+    elements.append(ach_box)
+    elements.append(Spacer(1, 8))
+
+    # Progression / what's new vs yesterday
+    prog_label = Paragraph("LEARNING PROGRESSION — WHAT'S NEW VS YESTERDAY", ParagraphStyle('lbl5', fontName='Helvetica-Bold', fontSize=8, textColor=colors.HexColor("#1B5E20"), leading=11, spaceAfter=4))
+    prog_body = Paragraph(p['progression'], progression_style)
+    prog_box = Table([[prog_label], [prog_body]], colWidths=[W - 40*mm])
+    prog_box.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#E8F5E9")),
+        ('TOPPADDING', (0,0), (-1,-1), 8),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('LEFTPADDING', (0,0), (-1,-1), 12),
+        ('RIGHTPADDING', (0,0), (-1,-1), 12),
+        ('LINEAFTER', (0,0), (-1,-1), 3, colors.HexColor("#388E3C")),
+    ]))
+    elements.append(prog_box)
+    elements.append(Spacer(1, 16))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=DIVIDER, spaceAfter=16))
+
+    story.extend(elements)
+
+    # Page break after every 2 projects within same phase for readability
+    story.append(PageBreak())
+
+# ── BACK COVER ───────────────────────────────────────────────────────────────
+class BackCover(FL):
+    def __init__(self):
+        FL.__init__(self)
+        self.width = W
+        self.height = H
+    def draw(self):
+        c = self.canv
+        c.setFillColor(ACCENT)
+        c.rect(-20*mm, -20*mm, W+40*mm, H+40*mm, fill=1, stroke=0)
+        c.setFillColor(colors.HexColor("#6C63FF"))
+        c.rect(-20*mm, H*0.65, W+40*mm, 3, fill=1, stroke=0)
+        c.setFont('Helvetica-Bold', 28)
+        c.setFillColor(WHITE)
+        c.drawCentredString(W/2, H*0.72, "Your 50-Day Learning Arc")
+        items = [
+            ("Days 1–10",   "Core AI engineering foundations. Ship 10 working tools."),
+            ("Days 11–20",  "Master RAG pipelines, vector DBs, production retrieval."),
+            ("Days 21–32",  "Build agents with LangChain, LangGraph, and tool use."),
+            ("Days 33–42",  "Infrastructure: caching, multi-tenancy, eval, HITL."),
+            ("Days 43–50",  "Startup-grade systems: CRM, SDE agent, AI platform."),
+        ]
+        y = H*0.65 - 30
+        for phase, desc in items:
+            c.setFont('Helvetica-Bold', 12)
+            c.setFillColor(colors.HexColor("#6C63FF"))
+            c.drawString(30*mm, y, phase)
+            c.setFont('Helvetica', 11)
+            c.setFillColor(colors.HexColor("#CCCCFF"))
+            c.drawString(75*mm, y, desc)
+            y -= 26
+        c.setFont('Helvetica-Bold', 13)
+        c.setFillColor(WHITE)
+        c.drawCentredString(W/2, H*0.25, "Start Day 1. Ship something today.")
+        c.setFont('Helvetica', 10)
+        c.setFillColor(colors.HexColor("#888888"))
+        c.drawCentredString(W/2, 25*mm, "50 Days · 50 Projects · 1 Goal: 25LPA AI Engineer Role")
+
+story.append(BackCover())
+
+# ── BUILD ─────────────────────────────────────────────────────────────────────
+out = "/home/claude/50_days_ai_engineer_roadmap.pdf"
+doc = SimpleDocTemplate(
+    out,
+    pagesize=A4,
+    rightMargin=20*mm,
+    leftMargin=20*mm,
+    topMargin=20*mm,
+    bottomMargin=22*mm,
+    title="50 Days to AI Engineer — Production-Grade Roadmap",
+    author="AI Engineer Roadmap",
+    subject="50-day project-based AI engineering curriculum"
+)
+doc.build(story, onFirstPage=make_page_template, onLaterPages=make_page_template)
+print(f"Done → {out}")

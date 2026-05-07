@@ -14,6 +14,8 @@ class Settings:
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
     RERANK_MODEL = os.getenv("RERANK_MODEL")
 
+    USER_AGENT = os.getenv("USER_AGENT")
+
     TOP_K = int(os.getenv("TOP_K"))
     FINAL_TOP_K = int(os.getenv("FINAL_TOP_K"))
 
